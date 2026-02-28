@@ -1,0 +1,21 @@
+# AI Model Data Directory
+
+This directory is used for storing:
+- Vector embeddings (if persisted to disk)
+- Cached responses
+- Temporary files
+
+## Note
+
+This directory is excluded from git (see .gitignore).
+The vector store can be configured to persist here for faster startup.
+
+## Configuration
+
+In `ai-model/config.ts`:
+```typescript
+vectorStore: {
+  type: 'memory',  // or 'file' for persistence
+  persistPath: './ai-model/data/vectors',
+}
+```

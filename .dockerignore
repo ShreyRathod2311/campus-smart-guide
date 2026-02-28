@@ -1,0 +1,9 @@
+# ---- Docker ignore ----
+node_modules
+dist
+.git
+.env
+*.log
+ai-model/__pycache__
+ai-model/app/__pycache__
+ai-model/.venv

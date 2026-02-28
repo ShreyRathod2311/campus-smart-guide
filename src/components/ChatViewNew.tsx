@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Send, Bot, User, Sparkles, BookOpen, HelpCircle, CalendarPlus, Link as LinkIcon } from "lucide-react";
+import { Send, Bot, User, Sparkles, BookOpen, HelpCircle, CalendarPlus, Link as LinkIcon, FileText, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Msg, streamChat } from "@/lib/chat-stream";
+import { Msg, SourceDoc, ChatMetadata, streamChat } from "@/lib/chat-stream";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,50 @@ const QUICK_ACTIONS = [
   { label: "Reimbursement", icon: HelpCircle, prompt: "What is the process for bill reimbursement?", color: "border-amber-500/30 hover:border-amber-500/50" },
   { label: "Policies", icon: Sparkles, prompt: "Tell me about department policies", color: "border-violet-500/30 hover:border-violet-500/50" },
 ];
+
+function SourcesSection({ sources }: { sources: SourceDoc[] }) {
+  const [isCollapsed, setIsCollapsed] = useState(true);
+
+  if (!sources || sources.length === 0) return null;
+
+  return (
+    <div className="mt-3 pt-3 border-t border-border/50">
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
+      >
+        <FileText size={12} />
+        <span className="font-medium">Sources ({sources.length})</span>
+        {isCollapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+      </button>
+      {!isCollapsed && (
+        <div className="space-y-2 animate-fade-in">
+          {sources.map((source) => (
+            <div key={source.id} className="border border-border rounded-lg overflow-hidden bg-muted/30 px-3 py-2">
+              <div className="flex items-center gap-2">
+                <FileText size={14} className="text-primary shrink-0" />
+                <span className="text-sm font-medium truncate">{source.title}</span>
+                <span className="text-xs text-muted-foreground px-1.5 py-0.5 bg-muted rounded shrink-0">
+                  {source.category}
+                </span>
+                {source.similarity != null && (
+                  <span className="text-xs text-green-600 shrink-0">
+                    {Math.round(source.similarity * 100)}% match
+                  </span>
+                )}
+              </div>
+              {source.source && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  <span className="font-medium">Source:</span> {source.source}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ChatView() {
   const navigate = useNavigate();
@@ -35,6 +79,7 @@ export default function ChatView() {
     setIsLoading(true);
 
     let assistantSoFar = "";
+    let currentSources: SourceDoc[] = [];
     
     const upsertAssistant = (chunk: string) => {
       assistantSoFar += chunk;
@@ -42,10 +87,10 @@ export default function ChatView() {
         const last = prev[prev.length - 1];
         if (last?.role === "assistant") {
           return prev.map((m, i) =>
-            i === prev.length - 1 ? { ...m, content: assistantSoFar } : m
+            i === prev.length - 1 ? { ...m, content: assistantSoFar, sources: currentSources } : m
           );
         }
-        return [...prev, { role: "assistant", content: assistantSoFar }];
+        return [...prev, { role: "assistant", content: assistantSoFar, sources: currentSources }];
       });
     };
 
@@ -57,6 +102,9 @@ export default function ChatView() {
         onError: (err) => {
           toast.error(err);
           setIsLoading(false);
+        },
+        onMetadata: (metadata: ChatMetadata) => {
+          currentSources = metadata.sources;
         },
       });
     } catch {
@@ -113,12 +161,9 @@ export default function ChatView() {
                   {msg.role === "assistant" ? (
                     <div className="prose prose-sm prose-invert max-w-none">
                       <ReactMarkdown>{msg.content}</ReactMarkdown>
-                      {/* Source badge if present */}
-                      {msg.content.includes("Source:") && (
-                        <div className="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-muted-foreground">
-                          <LinkIcon size={12} />
-                          <span>Source: TA Guidelines Circular, Aug 2025</span>
-                        </div>
+                      {/* Source documents from RAG */}
+                      {msg.sources && msg.sources.length > 0 && (
+                        <SourcesSection sources={msg.sources} />
                       )}
                     </div>
                   ) : (

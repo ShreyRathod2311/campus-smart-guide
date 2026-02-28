@@ -8,7 +8,7 @@ interface ProtectedRouteProps {
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { user, isLoading } = useAuth();
-
+ 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">

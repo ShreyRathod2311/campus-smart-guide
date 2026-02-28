@@ -15,12 +15,10 @@ import ForgotPassword from "./pages/ForgotPassword";
 import NotFound from "./pages/NotFound";
 
 // Dashboard page components
-import HomeView from "@/components/HomeView";
 import ChatViewNew from "@/components/ChatViewNew";
 import BookingViewNew from "@/components/BookingViewNew";
 import RequestsViewNew from "@/components/RequestsViewNew";
 import ApprovalsView from "@/components/ApprovalsView";
-import AssistantView from "@/components/AssistantView";
 import NotificationsView from "@/components/NotificationsView";
 import SettingsView from "@/components/SettingsView";
 
@@ -96,12 +94,11 @@ const AppRoutes = () => (
         <DashboardLayout />
       </ProtectedRoute>
     }>
-      <Route index element={<HomeView />} />
+      <Route index element={<Navigate to="/dashboard/chat" replace />} />
       <Route path="chat" element={<ChatViewNew />} />
       <Route path="booking" element={<BookingViewNew />} />
       <Route path="requests" element={<RequestsViewNew />} />
       <Route path="approvals" element={<ApprovalsView />} />
-      <Route path="assistant" element={<AssistantView />} />
       <Route path="notifications" element={<NotificationsView />} />
       <Route path="settings" element={<SettingsView />} />
     </Route>

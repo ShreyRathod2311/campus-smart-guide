@@ -1,0 +1,84 @@
+services:
+  # ---- Ollama LLM server ----
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # Uncomment below for NVIDIA GPU pass-through
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # ---- Pull required models on first run ----
+  ollama-setup:
+    image: curlimages/curl:latest
+    container_name: ollama-setup
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+        echo 'Pulling llama3.2 …' &&
+        curl -sf http://ollama:11434/api/pull -d '{\"name\":\"llama3.2\"}' &&
+        echo '' && echo 'Pulling nomic-embed-text …' &&
+        curl -sf http://ollama:11434/api/pull -d '{\"name\":\"nomic-embed-text\"}' &&
+        echo '' && echo 'Models ready.'
+      "
+    restart: "no"
+
+  # ---- Python AI backend ----
+  backend:
+    build:
+      context: ./ai-model
+      dockerfile: Dockerfile
+    container_name: campus-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=llama3.2
+      - OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # ---- React frontend (nginx) ----
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+        - VITE_SUPABASE_PUBLISHABLE_KEY=${VITE_SUPABASE_PUBLISHABLE_KEY}
+        - VITE_USE_LOCAL_AI=true
+    container_name: campus-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  ollama_data:

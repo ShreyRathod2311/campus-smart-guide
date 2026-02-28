@@ -1,3 +1,5 @@
+import { streamChatLocal, isLocalAIAvailable } from './chat-stream-local';
+
 export interface SourceDoc {
   id: string;
   title: string;
@@ -19,8 +21,48 @@ export type Msg = {
 };
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+const USE_LOCAL_AI = import.meta.env.VITE_USE_LOCAL_AI === 'true';
 
 export async function streamChat({
+  messages,
+  onDelta,
+  onDone,
+  onError,
+  onMetadata,
+}: {
+  messages: Msg[];
+  onDelta: (deltaText: string) => void;
+  onDone: () => void;
+  onError: (error: string) => void;
+  onMetadata?: (metadata: ChatMetadata) => void;
+}) {
+  // Try local AI first if enabled
+  if (USE_LOCAL_AI) {
+    try {
+      const isAvailable = await isLocalAIAvailable();
+      if (isAvailable) {
+        console.log('Using local AI model (Ollama)...');
+        await streamChatLocal({
+          messages,
+          onDelta,
+          onDone,
+          onError,
+          onMetadata,
+        });
+        return;
+      } else {
+        console.warn('Local AI not available, falling back to remote API...');
+      }
+    } catch (error) {
+      console.error('Local AI error, falling back to remote API:', error);
+    }
+  }
+
+  // Fallback to remote API
+  await streamChatRemote({ messages, onDelta, onDone, onError, onMetadata });
+}
+
+async function streamChatRemote({
   messages,
   onDelta,
   onDone,

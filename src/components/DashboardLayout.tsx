@@ -7,12 +7,10 @@ import {
   SidebarLink,
 } from "@/components/ui/animated-sidebar";
 import {
-  Home,
   MessageSquare,
   CalendarPlus,
   ClipboardList,
   Shield,
-  Bot,
   Bell,
   Settings,
   LogOut,
@@ -26,12 +24,10 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { label: "Home", href: "/dashboard", icon: Home },
   { label: "Chat", href: "/dashboard/chat", icon: MessageSquare },
   { label: "New Booking", href: "/dashboard/booking", icon: CalendarPlus },
   { label: "My Requests", href: "/dashboard/requests", icon: ClipboardList },
   { label: "Approvals", href: "/dashboard/approvals", icon: Shield, adminOnly: true },
-  { label: "Assistant", href: "/dashboard/assistant", icon: Bot },
   { label: "Notifications", href: "/dashboard/notifications", icon: Bell },
   { label: "Settings", href: "/dashboard/settings", icon: Settings },
 ];

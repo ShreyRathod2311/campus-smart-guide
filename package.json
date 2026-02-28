@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "ai:install": "powershell -ExecutionPolicy Bypass -File ai-model/setup-ollama.ps1"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
