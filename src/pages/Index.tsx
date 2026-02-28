@@ -1,14 +1,179 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState, useEffect } from "react";
+import AppSidebar from "@/components/AppSidebar";
+import ChatView from "@/components/ChatView";
+import BookingView from "@/components/BookingView";
+import RequestsView from "@/components/RequestsView";
+import KnowledgeView from "@/components/KnowledgeView";
+import SettingsView from "@/components/SettingsView";
+import { supabase } from "@/integrations/supabase/client";
+import { Msg } from "@/lib/chat-stream";
+import { Menu, X } from "lucide-react";
 
-const Index = () => {
+type View = "chat" | "booking" | "my-requests" | "knowledge" | "settings";
+
+interface Conversation {
+  id: string;
+  title: string;
+}
+
+export default function Index() {
+  const [currentView, setCurrentView] = useState<View>("chat");
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Load conversations
+  useEffect(() => {
+    supabase
+      .from("conversations")
+      .select("id, title")
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setConversations(data);
+          setActiveConversationId(data[0].id);
+        }
+      });
+  }, []);
+
+  // Load messages when conversation changes
+  useEffect(() => {
+    if (!activeConversationId) return;
+    supabase
+      .from("messages")
+      .select("role, content")
+      .eq("conversation_id", activeConversationId)
+      .order("created_at", { ascending: true })
+      .then(({ data }) => {
+        if (data) setMessages(data as Msg[]);
+      });
+  }, [activeConversationId]);
+
+  // Save messages when they change
+  useEffect(() => {
+    if (!activeConversationId || messages.length === 0) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg.role === "assistant" && lastMsg.content) {
+      // Save the full conversation
+      const saveMessages = async () => {
+        // Delete old messages for this conversation
+        await supabase.from("messages").delete().eq("conversation_id", activeConversationId);
+        // Insert all current messages
+        await supabase.from("messages").insert(
+          messages.map((m) => ({
+            conversation_id: activeConversationId,
+            role: m.role,
+            content: m.content,
+          }))
+        );
+        // Update conversation title from first user message
+        const firstUserMsg = messages.find((m) => m.role === "user");
+        if (firstUserMsg) {
+          await supabase
+            .from("conversations")
+            .update({ title: firstUserMsg.content.slice(0, 60) })
+            .eq("id", activeConversationId);
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === activeConversationId
+                ? { ...c, title: firstUserMsg.content.slice(0, 60) }
+                : c
+            )
+          );
+        }
+      };
+      saveMessages();
+    }
+  }, [messages, activeConversationId]);
+
+  const handleNewChat = async () => {
+    const { data } = await supabase
+      .from("conversations")
+      .insert({ title: "New Chat" })
+      .select("id, title")
+      .single();
+    if (data) {
+      setConversations((prev) => [data, ...prev]);
+      setActiveConversationId(data.id);
+      setMessages([]);
+    }
+  };
+
+  const handleSelectConversation = (id: string) => {
+    setActiveConversationId(id);
+    setCurrentView("chat");
+    setSidebarOpen(false);
+  };
+
+  const handleDeleteConversation = async (id: string) => {
+    await supabase.from("conversations").delete().eq("id", id);
+    setConversations((prev) => prev.filter((c) => c.id !== id));
+    if (activeConversationId === id) {
+      const remaining = conversations.filter((c) => c.id !== id);
+      if (remaining.length > 0) {
+        setActiveConversationId(remaining[0].id);
+      } else {
+        setActiveConversationId(null);
+        setMessages([]);
+      }
+    }
+  };
+
+  // Auto-create first conversation if none exist
+  useEffect(() => {
+    if (conversations.length === 0 && currentView === "chat") {
+      handleNewChat();
+    }
+  }, [conversations.length, currentView]);
+
+  const handleViewChange = (view: View) => {
+    setCurrentView(view);
+    setSidebarOpen(false);
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
+    <div className="flex h-screen overflow-hidden bg-background">
+      {/* Mobile menu toggle */}
+      <button
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-card border border-border shadow-md"
+      >
+        {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+      </button>
+
+      {/* Sidebar overlay on mobile */}
+      {sidebarOpen && (
+        <div className="lg:hidden fixed inset-0 bg-foreground/20 backdrop-blur-sm z-30" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      {/* Sidebar */}
+      <div className={`fixed lg:static z-40 transition-transform duration-300 ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
+        <AppSidebar
+          currentView={currentView}
+          onViewChange={handleViewChange}
+          conversations={conversations}
+          activeConversationId={activeConversationId}
+          onSelectConversation={handleSelectConversation}
+          onNewChat={handleNewChat}
+          onDeleteConversation={handleDeleteConversation}
+        />
       </div>
+
+      {/* Main Content */}
+      <main className="flex-1 h-screen overflow-hidden">
+        {currentView === "chat" && (
+          <ChatView
+            messages={messages}
+            setMessages={setMessages}
+            onNavigateToBooking={() => setCurrentView("booking")}
+          />
+        )}
+        {currentView === "booking" && <BookingView />}
+        {currentView === "my-requests" && <RequestsView />}
+        {currentView === "knowledge" && <KnowledgeView />}
+        {currentView === "settings" && <SettingsView />}
+      </main>
     </div>
   );
-};
-
-export default Index;
+}
