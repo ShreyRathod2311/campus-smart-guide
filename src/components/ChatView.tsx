@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Bot, User, Sparkles, BookOpen, HelpCircle, CalendarPlus } from "lucide-react";
+import { Send, Bot, User, Sparkles, BookOpen, HelpCircle, CalendarPlus, FileText, ChevronDown, ChevronUp, ExternalLink, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Msg, streamChat } from "@/lib/chat-stream";
+import { Msg, SourceDoc, ChatMetadata, streamChat } from "@/lib/chat-stream";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 interface ChatViewProps {
   messages: Msg[];
@@ -17,6 +18,116 @@ const QUICK_ACTIONS = [
   { label: "Reimbursement", icon: HelpCircle, prompt: "What is the process for bill reimbursement?" },
   { label: "Academic Calendar", icon: Sparkles, prompt: "What are the important dates for this semester?" },
 ];
+
+// Source card component
+function SourceCard({ source, isExpanded, onToggle }: { source: SourceDoc; isExpanded: boolean; onToggle: () => void }) {
+  return (
+    <div className="border border-border rounded-lg overflow-hidden bg-muted/30">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <FileText size={14} className="text-primary shrink-0" />
+          <span className="text-sm font-medium truncate">{source.title}</span>
+          <span className="text-xs text-muted-foreground px-1.5 py-0.5 bg-muted rounded shrink-0">
+            {source.category}
+          </span>
+          {source.similarity && (
+            <span className="text-xs text-green-600 shrink-0">{source.similarity}% match</span>
+          )}
+        </div>
+        {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+      </button>
+      {isExpanded && source.source && (
+        <div className="px-3 py-2 border-t border-border bg-muted/20">
+          <p className="text-xs text-muted-foreground">
+            <span className="font-medium">Source:</span> {source.source}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Sources section component
+function SourcesSection({ sources }: { sources: SourceDoc[] }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [isCollapsed, setIsCollapsed] = useState(true);
+
+  if (!sources || sources.length === 0) return null;
+
+  return (
+    <div className="mt-3 pt-3 border-t border-border/50">
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
+      >
+        <FileText size={12} />
+        <span className="font-medium">Sources ({sources.length})</span>
+        {isCollapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+      </button>
+      {!isCollapsed && (
+        <div className="space-y-2 animate-fade-in">
+          {sources.map((source) => (
+            <SourceCard
+              key={source.id}
+              source={source}
+              isExpanded={expandedId === source.id}
+              onToggle={() => setExpandedId(expandedId === source.id ? null : source.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Generated image component
+function GeneratedImage({ url }: { url: string }) {
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+
+  if (hasError) {
+    return (
+      <div className="mt-3 p-4 border border-border rounded-lg bg-muted/30 text-center">
+        <ImageIcon className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
+        <p className="text-sm text-muted-foreground">Failed to load generated image</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+        <ImageIcon size={12} />
+        <span className="font-medium">Generated Image</span>
+      </div>
+      <div className="relative rounded-lg overflow-hidden border border-border">
+        {isLoading && (
+          <div className="absolute inset-0 bg-muted animate-pulse flex items-center justify-center">
+            <span className="text-sm text-muted-foreground">Loading image...</span>
+          </div>
+        )}
+        <img
+          src={url}
+          alt="AI Generated"
+          className={cn("w-full max-w-md rounded-lg", isLoading && "opacity-0")}
+          onLoad={() => setIsLoading(false)}
+          onError={() => setHasError(true)}
+        />
+      </div>
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-2"
+      >
+        Open full size <ExternalLink size={10} />
+      </a>
+    </div>
+  );
+}
 
 export default function ChatView({ messages, setMessages, onNavigateToBooking }: ChatViewProps) {
   const [input, setInput] = useState("");
@@ -37,16 +148,29 @@ export default function ChatView({ messages, setMessages, onNavigateToBooking }:
     setIsLoading(true);
 
     let assistantSoFar = "";
+    let currentSources: SourceDoc[] = [];
+    let currentImage: string | null = null;
+    
     const upsertAssistant = (chunk: string) => {
       assistantSoFar += chunk;
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         if (last?.role === "assistant") {
           return prev.map((m, i) =>
-            i === prev.length - 1 ? { ...m, content: assistantSoFar } : m
+            i === prev.length - 1 ? { 
+              ...m, 
+              content: assistantSoFar,
+              sources: currentSources,
+              generatedImage: currentImage,
+            } : m
           );
         }
-        return [...prev, { role: "assistant", content: assistantSoFar }];
+        return [...prev, { 
+          role: "assistant", 
+          content: assistantSoFar,
+          sources: currentSources,
+          generatedImage: currentImage,
+        }];
       });
     };
 
@@ -58,6 +182,26 @@ export default function ChatView({ messages, setMessages, onNavigateToBooking }:
         onError: (err) => {
           toast.error(err);
           setIsLoading(false);
+        },
+        onMetadata: (metadata) => {
+          currentSources = metadata.sources;
+          currentImage = metadata.generatedImage;
+          // Update message with metadata even before content starts
+          if (assistantSoFar === "") {
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last?.role === "assistant") {
+                return prev.map((m, i) =>
+                  i === prev.length - 1 ? { 
+                    ...m, 
+                    sources: currentSources,
+                    generatedImage: currentImage,
+                  } : m
+                );
+              }
+              return prev;
+            });
+          }
         },
       });
     } catch {
@@ -126,9 +270,19 @@ export default function ChatView({ messages, setMessages, onNavigateToBooking }:
                   }`}
                 >
                   {msg.role === "assistant" ? (
-                    <div className="prose prose-sm max-w-none prose-p:my-1.5 prose-headings:my-2 prose-li:my-0.5 prose-pre:bg-muted prose-pre:text-foreground prose-code:text-primary prose-code:bg-primary/10 prose-code:px-1 prose-code:rounded">
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
-                    </div>
+                    <>
+                      <div className="prose prose-sm max-w-none prose-p:my-1.5 prose-headings:my-2 prose-li:my-0.5 prose-pre:bg-muted prose-pre:text-foreground prose-code:text-primary prose-code:bg-primary/10 prose-code:px-1 prose-code:rounded">
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      </div>
+                      {/* Generated Image */}
+                      {msg.generatedImage && (
+                        <GeneratedImage url={msg.generatedImage} />
+                      )}
+                      {/* Source Documents */}
+                      {msg.sources && msg.sources.length > 0 && (
+                        <SourcesSection sources={msg.sources} />
+                      )}
+                    </>
                   ) : (
                     <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
                   )}

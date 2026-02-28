@@ -1,4 +1,22 @@
-export type Msg = { role: "user" | "assistant"; content: string };
+export interface SourceDoc {
+  id: string;
+  title: string;
+  category: string;
+  source: string | null;
+  similarity?: number;
+}
+
+export interface ChatMetadata {
+  sources: SourceDoc[];
+  generatedImage: string | null;
+}
+
+export type Msg = { 
+  role: "user" | "assistant"; 
+  content: string;
+  sources?: SourceDoc[];
+  generatedImage?: string | null;
+};
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
@@ -7,11 +25,13 @@ export async function streamChat({
   onDelta,
   onDone,
   onError,
+  onMetadata,
 }: {
   messages: Msg[];
   onDelta: (deltaText: string) => void;
   onDone: () => void;
   onError: (error: string) => void;
+  onMetadata?: (metadata: ChatMetadata) => void;
 }) {
   const resp = await fetch(CHAT_URL, {
     method: "POST",
@@ -19,7 +39,7 @@ export async function streamChat({
       "Content-Type": "application/json",
       Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
     },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages: messages.map(m => ({ role: m.role, content: m.content })) }),
   });
 
   if (resp.status === 429) {
@@ -62,6 +82,18 @@ export async function streamChat({
 
       try {
         const parsed = JSON.parse(jsonStr);
+        
+        // Handle metadata event
+        if (parsed.type === "metadata") {
+          if (onMetadata) {
+            onMetadata({
+              sources: parsed.sources || [],
+              generatedImage: parsed.generatedImage || null,
+            });
+          }
+          continue;
+        }
+        
         const content = parsed.choices?.[0]?.delta?.content as string | undefined;
         if (content) onDelta(content);
       } catch {
@@ -82,6 +114,18 @@ export async function streamChat({
       if (jsonStr === "[DONE]") continue;
       try {
         const parsed = JSON.parse(jsonStr);
+        
+        // Handle metadata event in final flush
+        if (parsed.type === "metadata") {
+          if (onMetadata) {
+            onMetadata({
+              sources: parsed.sources || [],
+              generatedImage: parsed.generatedImage || null,
+            });
+          }
+          continue;
+        }
+        
         const content = parsed.choices?.[0]?.delta?.content as string | undefined;
         if (content) onDelta(content);
       } catch { /* ignore */ }

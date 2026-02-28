@@ -1,5 +1,7 @@
-import { MessageSquare, CalendarPlus, ClipboardList, BookOpen, Settings, Plus, Trash2 } from "lucide-react";
+import { MessageSquare, CalendarPlus, ClipboardList, BookOpen, Settings, Plus, Trash2, LogOut, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useNavigate } from "react-router-dom";
+import { UserRole } from "@/contexts/AuthContext";
 
 type View = "chat" | "booking" | "my-requests" | "knowledge" | "settings";
 
@@ -16,6 +18,10 @@ interface AppSidebarProps {
   onSelectConversation: (id: string) => void;
   onNewChat: () => void;
   onDeleteConversation: (id: string) => void;
+  onSignOut?: () => void;
+  userEmail?: string;
+  userName?: string | null;
+  userRole?: UserRole;
 }
 
 const navItems: { id: View; label: string; icon: React.ElementType }[] = [
@@ -34,7 +40,39 @@ export default function AppSidebar({
   onSelectConversation,
   onNewChat,
   onDeleteConversation,
+  onSignOut,
+  userEmail,
+  userName,
+  userRole,
 }: AppSidebarProps) {
+  const navigate = useNavigate();
+  
+  // Get user initials from name or email
+  const getUserInitials = (name?: string | null, email?: string) => {
+    if (name) {
+      const parts = name.split(" ");
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[1][0]).toUpperCase();
+      }
+      return name.substring(0, 2).toUpperCase();
+    }
+    if (!email) return "U";
+    const parts = email.split("@")[0].split(/[._-]/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return email.substring(0, 2).toUpperCase();
+  };
+
+  const getRoleLabel = (role?: UserRole) => {
+    switch (role) {
+      case "admin": return "Administrator";
+      case "professor": return "Professor";
+      case "staff": return "Staff";
+      default: return "Student";
+    }
+  };
+
   return (
     <aside className="w-64 h-screen flex flex-col bg-sidebar border-r border-sidebar-border" style={{ background: 'var(--gradient-sidebar)' }}>
       {/* Logo */}
@@ -71,6 +109,17 @@ export default function AppSidebar({
             </button>
           );
         })}
+        
+        {/* Admin Panel Link - only for admins */}
+        {userRole === "admin" && (
+          <button
+            onClick={() => navigate("/admin")}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 text-amber-500 hover:text-amber-400 hover:bg-sidebar-accent/50"
+          >
+            <Shield size={18} />
+            Admin Panel
+          </button>
+        )}
       </nav>
 
       {/* Chat History */}
@@ -119,12 +168,25 @@ export default function AppSidebar({
       <div className="p-4 border-t border-sidebar-border">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-sidebar-accent flex items-center justify-center">
-            <span className="text-xs font-medium text-sidebar-accent-foreground">G</span>
+            <span className="text-xs font-medium text-sidebar-accent-foreground">
+              {getUserInitials(userName, userEmail)}
+            </span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-sidebar-foreground truncate">Guest User</p>
-            <p className="text-xs text-sidebar-muted truncate">CSIS Department</p>
+            <p className="text-sm font-medium text-sidebar-foreground truncate">
+              {userName || userEmail || "Guest User"}
+            </p>
+            <p className="text-xs text-sidebar-muted truncate">{getRoleLabel(userRole)}</p>
           </div>
+          {onSignOut && (
+            <button
+              onClick={onSignOut}
+              className="p-2 rounded-lg text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+              title="Sign out"
+            >
+              <LogOut size={16} />
+            </button>
+          )}
         </div>
       </div>
     </aside>

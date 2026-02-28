@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import AppSidebar from "@/components/AppSidebar";
 import ChatView from "@/components/ChatView";
 import BookingView from "@/components/BookingView";
@@ -6,8 +7,11 @@ import RequestsView from "@/components/RequestsView";
 import KnowledgeView from "@/components/KnowledgeView";
 import SettingsView from "@/components/SettingsView";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { Msg } from "@/lib/chat-stream";
-import { Menu, X } from "lucide-react";
+import { Menu, X, LogOut } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 type View = "chat" | "booking" | "my-requests" | "knowledge" | "settings";
 
@@ -17,17 +21,22 @@ interface Conversation {
 }
 
 export default function Index() {
+  const navigate = useNavigate();
+  const { user, profile, signOut } = useAuth();
   const [currentView, setCurrentView] = useState<View>("chat");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Load conversations
+  // Load conversations for current user
   useEffect(() => {
+    if (!user) return;
+    
     supabase
       .from("conversations")
       .select("id, title")
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .then(({ data }) => {
         if (data && data.length > 0) {
@@ -35,7 +44,7 @@ export default function Index() {
           setActiveConversationId(data[0].id);
         }
       });
-  }, []);
+  }, [user]);
 
   // Load messages when conversation changes
   useEffect(() => {
@@ -88,9 +97,11 @@ export default function Index() {
   }, [messages, activeConversationId]);
 
   const handleNewChat = async () => {
+    if (!user) return;
+    
     const { data } = await supabase
       .from("conversations")
-      .insert({ title: "New Chat" })
+      .insert({ title: "New Chat", user_id: user.id })
       .select("id, title")
       .single();
     if (data) {
@@ -120,6 +131,12 @@ export default function Index() {
     }
   };
 
+  const handleSignOut = async () => {
+    await signOut();
+    toast.success("Signed out successfully");
+    navigate("/");
+  };
+
   // Auto-create first conversation if none exist
   useEffect(() => {
     if (conversations.length === 0 && currentView === "chat") {
@@ -135,12 +152,21 @@ export default function Index() {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Mobile menu toggle */}
-      <button
-        onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-card border border-border shadow-md"
-      >
-        {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
-      </button>
+      <div className="lg:hidden fixed top-4 left-4 z-50 flex items-center gap-2">
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="p-2 rounded-lg bg-card border border-border shadow-md"
+        >
+          {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
+      </div>
+
+      {/* Sign out button - mobile */}
+      <div className="lg:hidden fixed top-4 right-4 z-50">
+        <Button variant="ghost" size="sm" onClick={handleSignOut}>
+          <LogOut size={18} />
+        </Button>
+      </div>
 
       {/* Sidebar overlay on mobile */}
       {sidebarOpen && (
@@ -157,6 +183,10 @@ export default function Index() {
           onSelectConversation={handleSelectConversation}
           onNewChat={handleNewChat}
           onDeleteConversation={handleDeleteConversation}
+          onSignOut={handleSignOut}
+          userEmail={user?.email}
+          userName={profile?.full_name}
+          userRole={profile?.role}
         />
       </div>
 

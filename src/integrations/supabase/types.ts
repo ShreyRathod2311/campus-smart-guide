@@ -28,6 +28,7 @@ export type Database = {
           status: string
           updated_at: string
           venue: string
+          user_id: string | null
         }
         Insert: {
           admin_remarks?: string | null
@@ -42,6 +43,7 @@ export type Database = {
           status?: string
           updated_at?: string
           venue: string
+          user_id?: string | null
         }
         Update: {
           admin_remarks?: string | null
@@ -56,6 +58,49 @@ export type Database = {
           status?: string
           updated_at?: string
           venue?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      campus_documents: {
+        Row: {
+          id: string
+          title: string
+          content: string
+          category: string
+          tags: string[] | null
+          source: string | null
+          embedding: number[] | null
+          metadata: Json
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          title: string
+          content: string
+          category: string
+          tags?: string[] | null
+          source?: string | null
+          embedding?: number[] | null
+          metadata?: Json
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          title?: string
+          content?: string
+          category?: string
+          tags?: string[] | null
+          source?: string | null
+          embedding?: number[] | null
+          metadata?: Json
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -64,16 +109,19 @@ export type Database = {
           created_at: string
           id: string
           title: string | null
+          user_id: string | null
         }
         Insert: {
           created_at?: string
           id?: string
           title?: string | null
+          user_id?: string | null
         }
         Update: {
           created_at?: string
           id?: string
           title?: string | null
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -145,12 +193,56 @@ export type Database = {
         }
         Relationships: []
       }
+      profiles: {
+        Row: {
+          id: string
+          email: string
+          full_name: string | null
+          avatar_url: string | null
+          role: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          email: string
+          full_name?: string | null
+          avatar_url?: string | null
+          role?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string
+          full_name?: string | null
+          avatar_url?: string | null
+          role?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      match_campus_documents: {
+        Args: {
+          query_embedding: number[]
+          match_threshold?: number
+          match_count?: number
+        }
+        Returns: {
+          id: string
+          title: string
+          content: string
+          category: string
+          source: string
+          similarity: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
