@@ -4,14 +4,25 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import DashboardLayout from "@/components/DashboardLayout";
 import Landing from "./pages/Landing";
-import Dashboard from "./pages/Index";
 import Admin from "./pages/Admin";
 import SignIn from "./pages/SignIn";
 import SignUp from "./pages/SignUp";
 import ForgotPassword from "./pages/ForgotPassword";
 import NotFound from "./pages/NotFound";
+
+// Dashboard page components
+import HomeView from "@/components/HomeView";
+import ChatViewNew from "@/components/ChatViewNew";
+import BookingViewNew from "@/components/BookingViewNew";
+import RequestsViewNew from "@/components/RequestsViewNew";
+import ApprovalsView from "@/components/ApprovalsView";
+import AssistantView from "@/components/AssistantView";
+import NotificationsView from "@/components/NotificationsView";
+import SettingsView from "@/components/SettingsView";
 
 const queryClient = new QueryClient();
 
@@ -79,12 +90,21 @@ const AppRoutes = () => (
       </AuthRoute>
     } />
     
-    {/* Protected routes */}
+    {/* Protected dashboard routes with nested layout */}
     <Route path="/dashboard" element={
       <ProtectedRoute>
-        <Dashboard />
+        <DashboardLayout />
       </ProtectedRoute>
-    } />
+    }>
+      <Route index element={<HomeView />} />
+      <Route path="chat" element={<ChatViewNew />} />
+      <Route path="booking" element={<BookingViewNew />} />
+      <Route path="requests" element={<RequestsViewNew />} />
+      <Route path="approvals" element={<ApprovalsView />} />
+      <Route path="assistant" element={<AssistantView />} />
+      <Route path="notifications" element={<NotificationsView />} />
+      <Route path="settings" element={<SettingsView />} />
+    </Route>
     
     {/* Admin-only routes */}
     <Route path="/admin" element={
@@ -100,15 +120,17 @@ const AppRoutes = () => (
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AuthProvider>
-          <AppRoutes />
-        </AuthProvider>
-      </BrowserRouter>
-    </TooltipProvider>
+    <ThemeProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <AuthProvider>
+            <AppRoutes />
+          </AuthProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 

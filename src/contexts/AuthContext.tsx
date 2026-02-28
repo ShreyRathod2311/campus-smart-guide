@@ -17,9 +17,9 @@ interface AuthContextType {
   session: Session | null;
   profile: UserProfile | null;
   isLoading: boolean;
-  signUp: (email: string, password: string, fullName?: string, role?: UserRole) => Promise<{ error: AuthError | null }>;
-  signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
-  signInWithGoogle: () => Promise<{ error: AuthError | null }>;
+  signUp: (email: string, password: string, fullName?: string, role?: UserRole) => Promise<{ error: AuthError | null; data?: any }>;
+  signIn: (email: string, password: string) => Promise<{ error: AuthError | null; data?: any }>;
+  signInWithGoogle: () => Promise<{ error: AuthError | null; data?: any }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: AuthError | null }>;
   refreshProfile: () => Promise<void>;
@@ -33,17 +33,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchProfile = async (userId: string) => {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, email, full_name, avatar_url, role")
-      .eq("id", userId)
-      .single();
-    
-    if (data && !error) {
-      setProfile(data as UserProfile);
+  const fetchProfile = async (userId: string, retries = 3): Promise<UserProfile | null> => {
+    for (let i = 0; i < retries; i++) {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, email, full_name, avatar_url, role")
+        .eq("id", userId)
+        .single();
+      
+      if (data && !error) {
+        setProfile(data as UserProfile);
+        return data as UserProfile;
+      }
+      
+      // If profile doesn't exist and this is first attempt, wait longer for trigger
+      if (error?.code === 'PGRST116' && i < retries - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+        continue;
+      }
+      
+      console.error("Error fetching profile:", error);
     }
-    return data;
+    return null;
   };
 
   const refreshProfile = async () => {
@@ -58,8 +69,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        await fetchProfile(session.user.id);
+        try {
+          await fetchProfile(session.user.id);
+        } catch (error) {
+          console.error("Error fetching profile:", error);
+        }
       }
+      setIsLoading(false);
+    }).catch((error) => {
+      console.error("Error getting session:", error);
       setIsLoading(false);
     });
 
@@ -70,7 +88,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        await fetchProfile(session.user.id);
+        try {
+          await fetchProfile(session.user.id);
+        } catch (error) {
+          console.error("Error fetching profile:", error);
+        }
       } else {
         setProfile(null);
       }
@@ -83,38 +105,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = async (email: string, password: string, fullName?: string, role: 'student' | 'professor' | 'admin' = 'student') => {
     const redirectUrl = `${window.location.origin}/dashboard`;
     
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         emailRedirectTo: redirectUrl,
         data: {
-          full_name: fullName,
+          full_name: fullName || email.split('@')[0],
           role: role,
         },
       },
     });
-    return { error };
+    
+    // If signup successful and email confirmation not required, create profile manually
+    if (data?.user && !error && data.user.email_confirmed_at) {
+      await fetchProfile(data.user.id);
+    }
+    
+    return { error, data };
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
-    return { error };
+    
+    // Fetch profile after successful sign in
+    if (data?.user && !error) {
+      await fetchProfile(data.user.id);
+    }
+    
+    return { error, data };
   };
 
   const signInWithGoogle = async () => {
     const redirectUrl = `${window.location.origin}/dashboard`;
     
-    const { error } = await supabase.auth.signInWithOAuth({
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
         redirectTo: redirectUrl,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
       },
     });
-    return { error };
+    return { error, data };
   };
 
   const signOut = async () => {

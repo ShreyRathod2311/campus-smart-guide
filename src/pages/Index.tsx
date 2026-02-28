@@ -59,13 +59,13 @@ export default function Index() {
       });
   }, [activeConversationId]);
 
-  // Save messages when they change
+  // Save messages when they change (debounced to avoid rapid saves during streaming)
   useEffect(() => {
     if (!activeConversationId || messages.length === 0) return;
     const lastMsg = messages[messages.length - 1];
     if (lastMsg.role === "assistant" && lastMsg.content) {
-      // Save the full conversation
-      const saveMessages = async () => {
+      // Debounce save operation to wait for streaming to complete
+      const timeoutId = setTimeout(async () => {
         // Delete old messages for this conversation
         await supabase.from("messages").delete().eq("conversation_id", activeConversationId);
         // Insert all current messages
@@ -91,8 +91,9 @@ export default function Index() {
             )
           );
         }
-      };
-      saveMessages();
+      }, 1000); // Wait 1 second after last message change before saving
+      
+      return () => clearTimeout(timeoutId);
     }
   }, [messages, activeConversationId]);
 
