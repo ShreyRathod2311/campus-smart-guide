@@ -1,7 +1,15 @@
-import { Bell, Moon, Globe, Shield } from "lucide-react";
+import { Bell, Moon } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { useTheme } from "@/contexts/ThemeContext";
 
 export default function SettingsView() {
+  const { resolvedTheme, setTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
+
+  const handleDarkModeToggle = (checked: boolean) => {
+    setTheme(checked ? "dark" : "light");
+  };
+
   return (
     <div className="max-w-2xl mx-auto px-6 py-8 h-full overflow-y-auto scrollbar-thin">
       <div className="mb-8">
@@ -10,28 +18,33 @@ export default function SettingsView() {
       </div>
 
       <div className="space-y-4">
-        {[
-          { icon: Bell, title: "Email Notifications", description: "Receive email updates for booking status changes", defaultChecked: true },
-          { icon: Moon, title: "Dark Mode", description: "Switch to dark theme for reduced eye strain", defaultChecked: false },
-          { icon: Globe, title: "Multilingual Support", description: "Enable Hindi and regional language responses (coming soon)", defaultChecked: false },
-          { icon: Shield, title: "Privacy Mode", description: "Don't save chat history on the server", defaultChecked: false },
-        ].map((setting) => {
-          const Icon = setting.icon;
-          return (
-            <div key={setting.title} className="bg-card rounded-xl border border-border p-5 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Icon size={20} className="text-primary" />
-                </div>
-                <div>
-                  <h3 className="font-medium text-foreground">{setting.title}</h3>
-                  <p className="text-sm text-muted-foreground">{setting.description}</p>
-                </div>
-              </div>
-              <Switch defaultChecked={setting.defaultChecked} />
+        {/* Email Notifications */}
+        <div className="bg-card rounded-xl border border-border p-5 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Bell size={20} className="text-primary" />
             </div>
-          );
-        })}
+            <div>
+              <h3 className="font-medium text-foreground">Email Notifications</h3>
+              <p className="text-sm text-muted-foreground">Receive email updates for booking status changes</p>
+            </div>
+          </div>
+          <Switch defaultChecked={true} />
+        </div>
+
+        {/* Dark Mode – wired to ThemeContext */}
+        <div className="bg-card rounded-xl border border-border p-5 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Moon size={20} className="text-primary" />
+            </div>
+            <div>
+              <h3 className="font-medium text-foreground">Dark Mode</h3>
+              <p className="text-sm text-muted-foreground">Switch to dark theme for reduced eye strain</p>
+            </div>
+          </div>
+          <Switch checked={isDark} onCheckedChange={handleDarkModeToggle} />
+        </div>
       </div>
 
       <div className="mt-10 bg-card rounded-xl border border-border p-6">

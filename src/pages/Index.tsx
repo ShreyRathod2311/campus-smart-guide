@@ -32,7 +32,7 @@ export default function Index() {
   // Load conversations for current user
   useEffect(() => {
     if (!user) return;
-    
+
     supabase
       .from("conversations")
       .select("id, title")
@@ -92,14 +92,14 @@ export default function Index() {
           );
         }
       }, 1000); // Wait 1 second after last message change before saving
-      
+
       return () => clearTimeout(timeoutId);
     }
   }, [messages, activeConversationId]);
 
   const handleNewChat = async () => {
     if (!user) return;
-    
+
     const { data } = await supabase
       .from("conversations")
       .insert({ title: "New Chat", user_id: user.id })
