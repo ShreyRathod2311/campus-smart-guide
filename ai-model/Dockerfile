@@ -1,9 +1,15 @@
-# ---- Python AI backend ----
+# ---- Python AI backend with web scraping support ----
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install dependencies first for layer caching
+# System deps for lxml (used by BeautifulSoup HTML parser)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libxml2 \
+    libxslt1.1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies first (better layer caching)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

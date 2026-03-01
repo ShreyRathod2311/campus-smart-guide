@@ -1,5 +1,7 @@
 services:
-  # ---- Ollama LLM server ----
+  # ─────────────────────────────────────────────────────────────────
+  # Ollama — local LLM server
+  # ─────────────────────────────────────────────────────────────────
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
@@ -7,7 +9,7 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    # Uncomment below for NVIDIA GPU pass-through
+    # Uncomment below for NVIDIA GPU pass-through:
     # deploy:
     #   resources:
     #     reservations:
@@ -17,13 +19,15 @@ services:
     #           capabilities: [gpu]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 10s
-      timeout: 5s
+      test: [ "CMD-SHELL", "ollama list || exit 1" ]
+      interval: 15s
+      timeout: 10s
       retries: 10
-      start_period: 15s
+      start_period: 20s
 
-  # ---- Pull required models on first run ----
+  # ─────────────────────────────────────────────────────────────────
+  # Pull required models on first run
+  # ─────────────────────────────────────────────────────────────────
   ollama-setup:
     image: curlimages/curl:latest
     container_name: ollama-setup
@@ -32,15 +36,17 @@ services:
         condition: service_healthy
     entrypoint: >
       sh -c "
-        echo 'Pulling llama3.2 …' &&
-        curl -sf http://ollama:11434/api/pull -d '{\"name\":\"llama3.2\"}' &&
-        echo '' && echo 'Pulling nomic-embed-text …' &&
-        curl -sf http://ollama:11434/api/pull -d '{\"name\":\"nomic-embed-text\"}' &&
-        echo '' && echo 'Models ready.'
+        echo '=== Pulling llama3.2 (chat model) ===' &&
+        curl -sf --max-time 600 http://ollama:11434/api/pull -d '{\"name\":\"llama3.2\"}' &&
+        echo '' && echo '=== Pulling nomic-embed-text (embedding model) ===' &&
+        curl -sf --max-time 300 http://ollama:11434/api/pull -d '{\"name\":\"nomic-embed-text\"}' &&
+        echo '' && echo '=== All models ready! ==='
       "
     restart: "no"
 
-  # ---- Python AI backend ----
+  # ─────────────────────────────────────────────────────────────────
+  # Python AI backend (FastAPI + RAG + Image Gen)
+  # ─────────────────────────────────────────────────────────────────
   backend:
     build:
       context: ./ai-model
@@ -57,20 +63,22 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/')\" || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-      start_period: 30s
+      test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/')\" || exit 1" ]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
 
-  # ---- React frontend (nginx) ----
+  # ─────────────────────────────────────────────────────────────────
+  # React frontend (Vite build → nginx)
+  # ─────────────────────────────────────────────────────────────────
   frontend:
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
-        - VITE_SUPABASE_PUBLISHABLE_KEY=${VITE_SUPABASE_PUBLISHABLE_KEY}
+        - VITE_SUPABASE_URL=${VITE_SUPABASE_URL:-}
+        - VITE_SUPABASE_PUBLISHABLE_KEY=${VITE_SUPABASE_PUBLISHABLE_KEY:-}
         - VITE_USE_LOCAL_AI=true
     container_name: campus-frontend
     ports:
