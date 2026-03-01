@@ -6,16 +6,23 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
+
+# Load .env from project root (one level up from ai-model/)
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+load_dotenv()  # also check ai-model/.env if it exists
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
-from app.config import settings as ollama_settings, SYSTEM_PROMPT
+from app.config import SYSTEM_PROMPT
 from app.models import ChatRequest, HealthResponse, Message
-from app.ollama_client import ollama_client
+from app.gemini_client import gemini_client
 from app.rag_service import rag_service
 from app.knowledge_base import load_knowledge_base
 
@@ -33,14 +40,13 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Starting up – loading knowledge base …")
     try:
-        healthy = await ollama_client.health_check()
+        healthy = await gemini_client.health_check()
         if healthy:
             await load_knowledge_base()
-            logger.info("Knowledge base ready.")
+            logger.info("Knowledge base ready (using Gemini).")
         else:
             logger.warning(
-                "Ollama not reachable at %s – RAG disabled until reconnect.",
-                ollama_settings.base_url,
+                "Gemini API not reachable – check GEMINI_API_KEY. RAG disabled until reconnect."
             )
     except Exception as exc:
         logger.error("Startup error: %s", exc)
@@ -87,18 +93,18 @@ async def root():
 @app.get("/api/health", response_model=HealthResponse)
 async def health():
     """Health / readiness check."""
-    ollama_ok = await ollama_client.health_check()
+    gemini_ok = await gemini_client.health_check()
     models: list[str] = []
-    if ollama_ok:
+    if gemini_ok:
         try:
-            models = await ollama_client.list_models()
+            models = await gemini_client.list_models()
         except Exception:
             pass
 
     stats = rag_service.stats()
     return HealthResponse(
-        status="healthy" if ollama_ok else "degraded",
-        ollama_connected=ollama_ok,
+        status="healthy" if gemini_ok else "degraded",
+        ollama_connected=gemini_ok,  # reuse field for backward compat
         models_available=models,
         rag_documents=stats["total_chunks"],
         rag_categories=stats["categories"],
@@ -130,9 +136,9 @@ async def chat_stream(req: ChatRequest):
         except Exception as exc:
             logger.warning("RAG retrieval failed: %s", exc)
 
-    # ---- Build messages for Ollama ----
-    ollama_messages: list[dict] = [{"role": "system", "content": system_prompt}]
-    ollama_messages.extend(history)
+    # ---- Build messages for Gemini ----
+    gemini_messages: list[dict] = [{"role": "system", "content": system_prompt}]
+    gemini_messages.extend(history)
 
     # ---- SSE generator ----
     async def event_generator():
@@ -149,7 +155,7 @@ async def chat_stream(req: ChatRequest):
 
         # 2) stream tokens
         try:
-            async for token in ollama_client.chat_stream(ollama_messages):
+            async for token in gemini_client.chat_stream(gemini_messages):
                 payload = {
                     "choices": [{"delta": {"content": token}}]
                 }
@@ -189,8 +195,8 @@ async def chat_sync(req: ChatRequest):
         except Exception as exc:
             logger.warning("RAG retrieval failed: %s", exc)
 
-    ollama_messages = [{"role": "system", "content": system_prompt}] + history
-    response_text = await ollama_client.chat(ollama_messages)
+    gemini_messages = [{"role": "system", "content": system_prompt}] + history
+    response_text = await gemini_client.chat(gemini_messages)
 
     return {
         "response": response_text,

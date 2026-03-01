@@ -20,7 +20,7 @@ export type Msg = {
   generatedImage?: string | null;
 };
 
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-rag`;
 const USE_LOCAL_AI = import.meta.env.VITE_USE_LOCAL_AI === 'true';
 
 export async function streamChat({

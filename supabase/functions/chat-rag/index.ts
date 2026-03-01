@@ -134,8 +134,8 @@ serve(async (req: Request) => {
 
   try {
     const { messages } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not configured. Set it in Supabase Edge Function secrets.");
 
     // Get the latest user message for RAG search
     const userMessages = messages.filter((m: any) => m.role === "user");
@@ -151,46 +151,116 @@ serve(async (req: Request) => {
     // Build system prompt with RAG context
     const systemPrompt = buildSystemPrompt(ragContext);
 
-    const response = await fetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-3-flash-preview",
-          messages: [{ role: "system", content: systemPrompt }, ...messages],
-          stream: true,
-        }),
-      }
-    );
+    // Convert messages to Gemini format
+    const geminiContents = messages.map((m: any) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    }));
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    // Gemini models to try in order
+    const modelsToTry = [
+      { version: "v1", model: "gemini-2.5-flash" },
+      { version: "v1", model: "gemini-2.0-flash" },
+      { version: "v1", model: "gemini-1.5-flash" },
+    ];
+
+    let lastError: string | null = null;
+
+    for (const { version, model } of modelsToTry) {
+      try {
+        console.log(`Trying Gemini ${version}/${model}...`);
+
+        const geminiResponse = await fetch(
+          `https://generativelanguage.googleapis.com/${version}/models/${model}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: systemPrompt }] },
+              contents: geminiContents,
+              generationConfig: {
+                temperature: 0.7,
+                topK: 40,
+                topP: 0.8,
+                maxOutputTokens: 8192,
+              },
+            }),
+          }
         );
+
+        if (!geminiResponse.ok) {
+          const errText = await geminiResponse.text();
+          console.error(`Gemini ${model} error:`, geminiResponse.status, errText);
+          lastError = errText;
+          continue;
+        }
+
+        // Transform Gemini SSE stream → OpenAI-compatible SSE stream
+        const reader = geminiResponse.body!.getReader();
+        const encoder = new TextEncoder();
+        const decoder = new TextDecoder();
+
+        const transformedStream = new ReadableStream({
+          async start(controller) {
+            let buffer = "";
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+
+                let idx: number;
+                while ((idx = buffer.indexOf("\n")) !== -1) {
+                  const line = buffer.slice(0, idx).trim();
+                  buffer = buffer.slice(idx + 1);
+
+                  if (!line.startsWith("data: ")) continue;
+                  const payload = line.slice(6).trim();
+                  if (!payload) continue;
+
+                  try {
+                    const parsed = JSON.parse(payload);
+                    const text =
+                      parsed?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                    if (text) {
+                      // Emit in OpenAI-compatible format
+                      const chunk = JSON.stringify({
+                        choices: [{ delta: { content: text } }],
+                      });
+                      controller.enqueue(encoder.encode(`data: ${chunk}\n\n`));
+                    }
+                  } catch {
+                    // ignore parse errors
+                  }
+                }
+              }
+            } catch (err) {
+              console.error("Stream transform error:", err);
+            }
+
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          },
+        });
+
+        console.log(`Successfully streaming from Gemini ${version}/${model}`);
+        return new Response(transformedStream, {
+          headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+        });
+      } catch (modelErr) {
+        console.error(`Gemini ${model} failed:`, modelErr);
+        lastError = modelErr instanceof Error ? modelErr.message : String(modelErr);
+        continue;
       }
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: "AI usage limit reached. Please add credits." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      const t = await response.text();
-      console.error("AI gateway error:", response.status, t);
-      return new Response(
-        JSON.stringify({ error: "AI service temporarily unavailable." }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
     }
 
-    return new Response(response.body, {
-      headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
-    });
+    // All models failed
+    console.error("All Gemini models failed. Last error:", lastError);
+    return new Response(
+      JSON.stringify({ error: "AI service temporarily unavailable. All Gemini models failed." }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   } catch (e) {
     console.error("chat error:", e);
     return new Response(

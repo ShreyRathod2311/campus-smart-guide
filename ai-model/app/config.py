@@ -16,6 +16,14 @@ class OllamaConfig(BaseModel):
     top_k: int = 40
 
 
+class GeminiConfig(BaseModel):
+    api_key: str = os.getenv("GEMINI_API_KEY", "")
+    temperature: float = 0.7
+    max_tokens: int = 8192
+    top_p: float = 0.8
+    top_k: int = 40
+
+
 class RAGConfig(BaseModel):
     enabled: bool = True
     chunk_size: int = 500
@@ -61,4 +69,5 @@ doing so. Always cite sources when using the knowledge base."""
 
 
 settings = OllamaConfig()
+gemini_settings = GeminiConfig()
 rag_settings = RAGConfig()

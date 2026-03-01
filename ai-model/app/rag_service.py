@@ -9,7 +9,7 @@ import logging
 from typing import Optional
 
 from .config import rag_settings, rag_system_prompt, SYSTEM_PROMPT
-from .ollama_client import ollama_client
+from .gemini_client import gemini_client
 from .vector_store import vector_store, Document, SearchResult
 from .document_processor import doc_processor
 from .models import SourceDocument
@@ -31,7 +31,7 @@ class RAGService:
             chunks = doc_processor.process(doc_data["content"], doc_data["metadata"])
             for chunk in chunks:
                 try:
-                    emb = await ollama_client.generate_embedding(chunk["content"])
+                    emb = await gemini_client.generate_embedding(chunk["content"])
                     vector_store.add(
                         Document(
                             id=chunk["id"],
@@ -49,7 +49,7 @@ class RAGService:
     async def add_document(self, content: str, metadata: dict) -> None:
         chunks = doc_processor.process(content, metadata)
         for chunk in chunks:
-            emb = await ollama_client.generate_embedding(chunk["content"])
+            emb = await gemini_client.generate_embedding(chunk["content"])
             vector_store.add(
                 Document(
                     id=chunk["id"],
@@ -70,7 +70,7 @@ class RAGService:
         threshold: float = rag_settings.similarity_threshold,
         category: Optional[str] = None,
     ) -> list[SourceDocument]:
-        emb = await ollama_client.generate_embedding(query)
+        emb = await gemini_client.generate_embedding(query)
 
         filter_fn = None
         if category:
