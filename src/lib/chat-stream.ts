@@ -13,15 +13,14 @@ export interface ChatMetadata {
   generatedImage: string | null;
 }
 
-export type Msg = { 
-  role: "user" | "assistant"; 
+export type Msg = {
+  role: "user" | "assistant";
   content: string;
   sources?: SourceDoc[];
   generatedImage?: string | null;
 };
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
-const USE_LOCAL_AI = import.meta.env.VITE_USE_LOCAL_AI === 'true';
 
 export async function streamChat({
   messages,
@@ -38,30 +37,22 @@ export async function streamChat({
   onMetadata?: (metadata: ChatMetadata) => void;
   signal?: AbortSignal;
 }) {
-  // Try local AI first if enabled
-  if (USE_LOCAL_AI) {
-    try {
-      const isAvailable = await isLocalAIAvailable();
-      if (isAvailable) {
-        console.log('Using local AI model (Ollama)...');
-        await streamChatLocal({
-          messages,
-          onDelta,
-          onDone,
-          onError,
-          onMetadata,
-          signal,
-        });
-        return;
-      } else {
-        console.warn('Local AI not available, falling back to remote API...');
-      }
-    } catch (error) {
-      console.error('Local AI error, falling back to remote API:', error);
+  // Always try local backend first — it is the primary source of truth.
+  // Fallback to remote Supabase only if the local backend is completely unreachable.
+  try {
+    const isAvailable = await isLocalAIAvailable();
+    if (isAvailable) {
+      console.log('[streamChat] Using local AI backend (FastAPI + Ollama)');
+      await streamChatLocal({ messages, onDelta, onDone, onError, onMetadata, signal });
+      return;
+    } else {
+      console.warn('[streamChat] Local backend not reachable, falling back to remote API');
     }
+  } catch (error) {
+    console.error('[streamChat] Local backend error, falling back to remote API:', error);
   }
 
-  // Fallback to remote API
+  // Fallback to remote Supabase API
   console.log('[streamChat] Using remote API:', CHAT_URL);
   await streamChatRemote({ messages, onDelta, onDone, onError, onMetadata, signal });
 }
@@ -134,8 +125,7 @@ async function streamChatRemote({
 
       try {
         const parsed = JSON.parse(jsonStr);
-        
-        // Handle metadata event
+
         if (parsed.type === "metadata") {
           if (onMetadata) {
             onMetadata({
@@ -145,7 +135,7 @@ async function streamChatRemote({
           }
           continue;
         }
-        
+
         const content = parsed.choices?.[0]?.delta?.content as string | undefined;
         if (content) onDelta(content);
       } catch {
@@ -166,8 +156,6 @@ async function streamChatRemote({
       if (jsonStr === "[DONE]") continue;
       try {
         const parsed = JSON.parse(jsonStr);
-        
-        // Handle metadata event in final flush
         if (parsed.type === "metadata") {
           if (onMetadata) {
             onMetadata({
@@ -177,7 +165,6 @@ async function streamChatRemote({
           }
           continue;
         }
-        
         const content = parsed.choices?.[0]?.delta?.content as string | undefined;
         if (content) onDelta(content);
       } catch { /* ignore */ }

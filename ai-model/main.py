@@ -29,6 +29,63 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Topic Filter — fast keyword-based guard (runs BEFORE the LLM)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Keywords associated with BITS Pilani / campus topics
+BITS_KEYWORDS = {
+    # Institution
+    "bits", "pilani", "goa", "campus", "college", "university", "institute",
+    "birla", "hyderabad", "dubai",
+    # Departments & academics
+    "csis", "cs", "ece", "eee", "mech", "civil", "pharma", "bio",
+    "computer", "science", "engineering", "information", "systems",
+    "department", "faculty", "professor", "phd", "mtech", "btech",
+    "msc", "research", "lab", "laboratory",
+    # Student life
+    "student", "course", "semester", "exam", "assignment", "grade", "cgpa",
+    "sgpa", "attendance", "hostel", "mess", "canteen", "library", "fest",
+    "el", "practice school", "thesis", "dissertation", "project",
+    # Admin processes
+    "admission", "registration", "fee", "scholarship", "ta", "teaching assistant",
+    "reimbursement", "noc", "bonafide", "transcript", "certificate",
+    "placement", "internship", "company", "recruit", "package",
+    # Specific campus terms
+    "smartassist", "smart assist", "assistant", "help", "guide", "about",
+    "who", "what", "when", "where", "how", "which", "contact", "email",
+    "phone", "office", "timings", "schedule", "timetable", "calendar",
+}
+
+OUT_OF_SCOPE_REPLY = (
+    "⚠️ **Out of Scope**\n\n"
+    "I'm CSIS SmartAssist — I can only answer questions related to "
+    "**BITS Pilani Goa** and its departments, academics, faculty, admissions, "
+    "placements, research, and student life.\n\n"
+    "Your question appears to be outside that scope. "
+    "For anything BITS-related, feel free to ask! 😊"
+)
+
+
+def is_bits_related(query: str) -> bool:
+    """
+    Fast pre-LLM check. Returns True if the query is plausibly about BITS Pilani.
+    Short/greeting queries (≤ 6 words) are passed through to avoid false positives.
+    """
+    q = query.lower().strip()
+
+    # Very short queries / greetings — let the LLM handle them with full context
+    word_count = len(q.split())
+    if word_count <= 6:
+        return True
+
+    # Check if any BITS keyword appears in the query
+    for kw in BITS_KEYWORDS:
+        if kw in q:
+            return True
+
+    return False
+
 
 # ------------------------------------------------------------------
 # Lifespan – initialise on startup
@@ -58,7 +115,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS – allow the Vite dev server and Docker frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -81,7 +137,6 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    """Root route – confirms the server is running."""
     return {
         "message": "Campus Smart Guide AI backend is running",
         "version": "2.0.0",
@@ -91,7 +146,6 @@ async def root():
 
 @app.get("/api/health", response_model=HealthResponse)
 async def health():
-    """Health / readiness check."""
     ollama_ok = await ollama_client.health_check()
     models: list[str] = []
     if ollama_ok:
@@ -112,14 +166,29 @@ async def health():
 
 @app.post("/api/chat")
 async def chat_stream(req: ChatRequest):
-    """SSE streaming chat endpoint – mirrors the interface expected by the frontend."""
+    """SSE streaming chat endpoint."""
     if not req.messages:
         raise HTTPException(status_code=400, detail="messages required")
 
     user_message = req.messages[-1].content
     history: list[dict] = [{"role": m.role, "content": m.content} for m in req.messages]
 
-    # ---- RAG retrieval ----
+    # ── Pre-LLM topic guard ──────────────────────────────────────────────────
+    if not is_bits_related(user_message):
+        logger.info("[topic-guard] Rejected out-of-scope query: %r", user_message[:80])
+
+        async def oos_stream():
+            meta = {"type": "metadata", "sources": [], "generatedImage": None, "retrieval_ms": 0}
+            yield {"data": json.dumps(meta)}
+            # Stream the refusal word by word so it looks natural
+            for word in OUT_OF_SCOPE_REPLY.split(" "):
+                payload = {"choices": [{"delta": {"content": word + " "}}]}
+                yield {"data": json.dumps(payload)}
+            yield {"data": "[DONE]"}
+
+        return EventSourceResponse(oos_stream())
+
+    # ── RAG retrieval ────────────────────────────────────────────────────────
     system_prompt = SYSTEM_PROMPT
     sources_payload: list[dict] = []
     retrieval_ms = 0
@@ -135,35 +204,30 @@ async def chat_stream(req: ChatRequest):
         except Exception as exc:
             logger.warning("RAG retrieval failed: %s", exc)
 
-    # ---- Build messages for Ollama ----
+    # ── Build messages for Ollama ────────────────────────────────────────────
     ollama_messages: list[dict] = [{"role": "system", "content": system_prompt}]
     ollama_messages.extend(history)
 
-    # ---- SSE generator ----
+    # ── SSE generator ────────────────────────────────────────────────────────
     async def event_generator():
         start = time.time()
 
-        # 1) send metadata first
-        metadata = {
+        meta = {
             "type": "metadata",
             "sources": sources_payload,
             "generatedImage": None,
             "retrieval_ms": retrieval_ms,
         }
-        yield {"data": json.dumps(metadata, ensure_ascii=False)}
+        yield {"data": json.dumps(meta, ensure_ascii=False)}
 
-        # 2) stream tokens
         try:
             async for token in ollama_client.chat_stream(ollama_messages):
-                payload = {
-                    "choices": [{"delta": {"content": token}}]
-                }
+                payload = {"choices": [{"delta": {"content": token}}]}
                 yield {"data": json.dumps(payload, ensure_ascii=False)}
         except Exception as exc:
             logger.error("Stream error: %s", exc)
             yield {"data": json.dumps({"error": str(exc)})}
 
-        # 3) done sentinel
         elapsed = int((time.time() - start) * 1000)
         yield {"data": "[DONE]"}
         logger.info("Chat stream completed in %d ms", elapsed)
@@ -179,6 +243,9 @@ async def chat_sync(req: ChatRequest):
 
     user_message = req.messages[-1].content
     history = [{"role": m.role, "content": m.content} for m in req.messages]
+
+    if not is_bits_related(user_message):
+        return {"response": OUT_OF_SCOPE_REPLY, "sources": [], "metadata": rag_service.stats()}
 
     system_prompt = SYSTEM_PROMPT
     sources_payload: list[dict] = []
@@ -205,7 +272,7 @@ async def chat_sync(req: ChatRequest):
 
 
 # ------------------------------------------------------------------
-# Image Generation — Pollinations.ai (free, no API key needed)
+# Image Generation — Pollinations.ai (free, no API key)
 # ------------------------------------------------------------------
 
 class ImageRequest(BaseModel):
@@ -213,7 +280,7 @@ class ImageRequest(BaseModel):
     width: int = 1024
     height: int = 768
     seed: Optional[int] = None
-    model: str = "flux"          # Options: flux, turbo, ghibli, etc.
+    model: str = "flux"
     nologo: bool = True
 
 
@@ -225,29 +292,10 @@ class ImageResponse(BaseModel):
 
 @app.post("/api/image", response_model=ImageResponse)
 async def generate_image(req: ImageRequest):
-    """
-    Generate an image using Pollinations.ai (completely free, no API key).
-    The image URL is returned directly — the browser fetches it from Pollinations.
-    """
-    # Sanitise and encode the prompt
+    """Generate an image using Pollinations.ai — free, no API key needed."""
     clean_prompt = req.prompt.strip()
     if not clean_prompt:
         raise HTTPException(status_code=400, detail="prompt is required")
-
-    # Enforce BITS Pilani / educational context relevance (optional guard)
-    # You can remove this if you want unrestricted image generation.
-    bits_related = any(
-        kw in clean_prompt.lower()
-        for kw in ["bits", "pilani", "campus", "college", "university",
-                   "student", "lab", "research", "goa", "department",
-                   "engineering", "computer", "science", "academic", "diagram",
-                   "chart", "flowchart", "architecture"]
-    )
-    if not bits_related:
-        raise HTTPException(
-            status_code=400,
-            detail="Image generation is limited to BITS Pilani / academic topics."
-        )
 
     encoded_prompt = urllib.parse.quote(clean_prompt)
     params = f"width={req.width}&height={req.height}&model={req.model}&nologo={str(req.nologo).lower()}"
@@ -256,7 +304,6 @@ async def generate_image(req: ImageRequest):
 
     image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?{params}"
 
-    # Verify the URL is reachable (Pollinations generates on first GET)
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.head(image_url, follow_redirects=True)
@@ -276,14 +323,13 @@ async def generate_image_get(
     height: int = 768,
     model: str = "flux",
 ):
-    """GET shortcut for image generation (easier to test in browser)."""
     req = ImageRequest(prompt=prompt, width=width, height=height, model=model)
     return await generate_image(req)
 
 
 @app.post("/api/knowledge/reload")
 async def reload_knowledge():
-    """Re-scrape BITS Pilani web pages and reload the knowledge base."""
+    """Re-scrape BITS Pilani pages and reload the knowledge base."""
     await load_knowledge_base()
     return {"status": "ok", **rag_service.stats()}
 
@@ -293,5 +339,4 @@ async def reload_knowledge():
 # ------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

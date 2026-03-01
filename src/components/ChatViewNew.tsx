@@ -36,31 +36,31 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 
-/* ────────── Suggestion chips (Gemini-style) ────────── */
+/* ────────── Suggestion chips ────────── */
 const SUGGESTIONS = [
   {
-    label: "Book a Lab",
-    desc: "Reserve a lab or seminar hall",
-    icon: CalendarPlus,
-    prompt: "I want to book a lab",
-  },
-  {
-    label: "TA Application",
-    desc: "Learn how to apply for TA",
+    label: "CSIS Department",
+    desc: "About the CS/IS department at BITS Goa",
     icon: BookOpen,
-    prompt: "How do I apply for a TA position?",
+    prompt: "Tell me about the CSIS department at BITS Pilani Goa",
   },
   {
-    label: "Reimbursement",
-    desc: "Bill reimbursement process",
-    icon: HelpCircle,
-    prompt: "What is the process for bill reimbursement?",
+    label: "Academics & Programmes",
+    desc: "Courses, programmes and academic policies",
+    icon: GraduationCap,
+    prompt: "What academic programmes does BITS Pilani Goa offer?",
   },
   {
-    label: "Policies",
-    desc: "Department policies & rules",
+    label: "Placements",
+    desc: "Placement stats, top recruiters and packages",
     icon: Sparkles,
-    prompt: "Tell me about department policies",
+    prompt: "What are the placement stats and top recruiters at BITS Pilani Goa?",
+  },
+  {
+    label: "Faculty & Research",
+    desc: "Faculty members and research areas",
+    icon: HelpCircle,
+    prompt: "Who are the faculty members in the CSIS department at BITS Pilani Goa?",
   },
 ];
 
@@ -129,8 +129,8 @@ function ChatHistorySidebar({
 
   const filtered = search
     ? conversations.filter((c) =>
-        (c.title || "").toLowerCase().includes(search.toLowerCase())
-      )
+      (c.title || "").toLowerCase().includes(search.toLowerCase())
+    )
     : conversations;
 
   /* group by date */
@@ -631,7 +631,7 @@ export default function ChatView() {
                 Hello, {firstName}
               </h1>
               <p className="text-neutral-500 dark:text-neutral-400 text-base mb-10">
-                How can I help you today?
+                Ask me anything about BITS Pilani Goa — faculty, academics, admissions, placements and more.
               </p>
 
               {/* Suggestion cards (2×2 grid) */}
@@ -758,7 +758,7 @@ export default function ChatView() {
             </div>
 
             <p className="text-center text-[11px] text-neutral-400 mt-2">
-              SmartAssist may display inaccurate info. Verify important information.
+              CSIS SmartAssist only answers questions related to BITS Pilani Goa. Out-of-scope questions will be declined.
             </p>
           </div>
         </div>
