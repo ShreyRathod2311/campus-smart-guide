@@ -1,22 +1,40 @@
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
-import { CalendarIcon, Check, Info } from "lucide-react";
+import {
+  CalendarIcon,
+  Check,
+  Info,
+  ExternalLink,
+  CalendarPlus,
+  MessageSquare,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-
-interface Venue {
-  id: string;
-  name: string;
-  type: string;
-  capacity: number | null;
-}
+import {
+  fetchVenues,
+  checkAvailability,
+  createBooking,
+  formatTimeDisplay,
+  type Venue,
+  type BookingSlot,
+} from "@/lib/booking-service";
+import { useNavigate } from "react-router-dom";
 
 const TIME_SLOTS = [
   { time: "08:00", label: "8 AM" },
@@ -48,6 +66,8 @@ const QUICK_BOOKING_PROMPTS = [
 
 export default function BookingViewNew() {
   const { user, profile } = useAuth();
+  const navigate = useNavigate();
+
   const [venues, setVenues] = useState<Venue[]>([]);
   const [selectedVenue, setSelectedVenue] = useState("");
   const [date, setDate] = useState<Date>(new Date());
@@ -55,108 +75,209 @@ export default function BookingViewNew() {
   const [startTime, setStartTime] = useState("08:00");
   const [purpose, setPurpose] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [existingBookings, setExistingBookings] = useState<any[]>([]);
+  const [existingBookings, setExistingBookings] = useState<BookingSlot[]>([]);
   const [userBookings, setUserBookings] = useState<string[]>([]);
 
+  // Success state — shows after a booking is created
+  const [lastBookingResult, setLastBookingResult] = useState<{
+    calendarUrl: string;
+    venue: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+  } | null>(null);
+
+  // Shared function to refresh availability + user bookings
+  const refreshBookings = async (venue: string, dateObj: Date) => {
+    if (!venue || !dateObj) return;
+    const dateStr = format(dateObj, "yyyy-MM-dd");
+    const bookings = await checkAvailability(venue, dateStr);
+    console.log("[BookingView] refreshBookings:", { venue, dateStr, bookings });
+    setExistingBookings(bookings);
+
+    // Find user's own bookings for highlighting
+    const userSlots = bookings
+      .filter(
+        (b) =>
+          (user?.id && b.user_id === user.id) ||
+          (user?.email && b.email === user.email) ||
+          (profile?.full_name && b.requested_by === profile.full_name)
+      )
+      .flatMap((b) => {
+        const slots: string[] = [];
+        let current = b.start_time;
+        while (current < b.end_time) {
+          slots.push(current.slice(0, 5));
+          const hour = parseInt(current.slice(0, 2)) + 1;
+          current = `${hour.toString().padStart(2, "0")}:00`;
+        }
+        return slots;
+      });
+    setUserBookings(userSlots);
+  };
+
+  // Load venues on mount
   useEffect(() => {
-    supabase.from("venues").select("*").eq("is_active", true).then(({ data }) => {
-      if (data) {
-        setVenues(data);
-        if (data.length > 0) setSelectedVenue(data[0].name);
-      }
-    });
+    (async () => {
+      const v = await fetchVenues();
+      setVenues(v);
+      if (v.length > 0) setSelectedVenue(v[0].name);
+    })();
   }, []);
 
+  // Load existing bookings whenever venue + date changes
   useEffect(() => {
-    if (selectedVenue && date) {
-      supabase
-        .from("bookings")
-        .select("*")
-        .eq("venue", selectedVenue)
-        .eq("date", format(date, "yyyy-MM-dd"))
-        .neq("status", "cancelled")
-        .neq("status", "rejected")
-        .then(({ data }) => {
-          if (data) {
-            setExistingBookings(data);
-            // Find user's own bookings
-            const userSlots = data
-              .filter(b => b.email === user?.email || b.requested_by === profile?.full_name)
-              .flatMap(b => {
-                const slots = [];
-                let current = b.start_time;
-                while (current < b.end_time) {
-                  slots.push(current.slice(0, 5));
-                  const hour = parseInt(current.slice(0, 2)) + 1;
-                  current = `${hour.toString().padStart(2, '0')}:00`;
-                }
-                return slots;
-              });
-            setUserBookings(userSlots);
-          }
-        });
-    }
+    refreshBookings(selectedVenue, date);
   }, [selectedVenue, date, user, profile]);
 
-  const getSlotStatus = (time: string): "available" | "booked" | "yours" => {
-    const timeStr = time.slice(0, 5);
-    if (userBookings.includes(timeStr)) return "yours";
+  const getSlotStatus = (
+    time: string
+  ): "available" | "booked" | "yours" => {
+    const t = time.slice(0, 5);
+    if (userBookings.includes(t)) return "yours";
     const isBooked = existingBookings.some(
-      (b) => timeStr >= b.start_time.slice(0, 5) && timeStr < b.end_time.slice(0, 5)
+      (b) =>
+        t >= b.start_time.slice(0, 5) && t < b.end_time.slice(0, 5)
     );
     return isBooked ? "booked" : "available";
   };
 
   const handleSubmit = async () => {
+    if (!user?.id) {
+      toast.error("You must be signed in to create a booking.");
+      return;
+    }
     if (!selectedVenue || !date || !startTime || !purpose) {
       toast.error("Please fill all required fields.");
       return;
     }
 
-    const endHour = parseInt(startTime.slice(0, 2)) + parseInt(duration);
-    const endTime = `${endHour.toString().padStart(2, '0')}:00`;
+    const endHour =
+      parseInt(startTime.slice(0, 2)) + parseInt(duration);
+    const endTime = `${endHour.toString().padStart(2, "0")}:00`;
+    const dateStr = format(date, "yyyy-MM-dd");
 
     setIsSubmitting(true);
-    const { error } = await supabase.from("bookings").insert({
+    console.log("[BookingView] Submitting booking:", {
       venue: selectedVenue,
-      date: format(date, "yyyy-MM-dd"),
-      start_time: startTime,
-      end_time: endTime,
+      date: dateStr,
+      startTime,
+      endTime,
       purpose,
-      requested_by: profile?.full_name || user?.email || "Unknown",
-      email: user?.email,
+      userId: user.id,
     });
 
-    if (error) {
-      toast.error("Failed to submit booking. Please try again.");
-    } else {
-      toast.success("Booking request submitted for approval!");
-      setPurpose("");
-    }
+    const result = await createBooking({
+      venue: selectedVenue,
+      date: dateStr,
+      startTime,
+      endTime,
+      purpose,
+      requestedBy:
+        profile?.full_name || user?.email || "Unknown",
+      email: user?.email || "",
+      userId: user.id,
+    });
     setIsSubmitting(false);
+
+    if (!result.success) {
+      console.error("[BookingView] Booking failed:", result.error);
+      toast.error(result.error || "Failed to submit booking.");
+      return;
+    }
+
+    console.log("[BookingView] Booking created:", result.bookingId);
+    toast.success(
+      "Booking request submitted! Check your email for confirmation."
+    );
+
+    setLastBookingResult({
+      calendarUrl: result.calendarUrl || "",
+      venue: selectedVenue,
+      date: dateStr,
+      startTime,
+      endTime,
+    });
+    setPurpose("");
+
+    // Refresh availability AND user bookings
+    await refreshBookings(selectedVenue, date);
   };
 
-  const selectedVenueData = venues.find((v) => v.name === selectedVenue);
+  const selectedVenueData = venues.find(
+    (v) => v.name === selectedVenue
+  );
 
   return (
     <div className="flex-1 h-full overflow-y-auto bg-background p-6">
       <div className="max-w-5xl mx-auto">
+        {/* Success banner */}
+        {lastBookingResult && (
+          <div className="mb-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-5 animate-fade-in">
+            <div className="flex items-start gap-3">
+              <Check className="text-emerald-500 mt-0.5" size={20} />
+              <div className="flex-1">
+                <h3 className="font-semibold text-foreground">
+                  Booking Request Submitted!
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  <strong>{lastBookingResult.venue}</strong> on{" "}
+                  {lastBookingResult.date} from{" "}
+                  {formatTimeDisplay(lastBookingResult.startTime)} to{" "}
+                  {formatTimeDisplay(lastBookingResult.endTime)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Confirmation emails have been sent to you and the
+                  admin.
+                </p>
+                <div className="flex gap-3 mt-3">
+                  <a
+                    href={lastBookingResult.calendarUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-medium transition-colors"
+                  >
+                    <CalendarPlus size={16} />
+                    Add to Google Calendar
+                    <ExternalLink size={14} />
+                  </a>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setLastBookingResult(null)}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Left - Booking Form */}
           <div className="space-y-6">
-            <h1 className="text-2xl font-bold text-foreground">Booking Details</h1>
+            <h1 className="text-2xl font-bold text-foreground">
+              Booking Details
+            </h1>
 
             {/* Venue Selection */}
             <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Select Venue</label>
-              <Select value={selectedVenue} onValueChange={setSelectedVenue}>
-                <SelectTrigger className="w-full bg-card border-border text-foreground h-12">
-                  <SelectValue placeholder="Select a venue" />
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Select Venue
+              </label>
+              <Select
+                value={selectedVenue}
+                onValueChange={setSelectedVenue}
+              >
+                <SelectTrigger className="w-full bg-card border-border text-foreground h-12" disabled={venues.length === 0}>
+                  <SelectValue placeholder={venues.length === 0 ? "Loading venues..." : "Select a venue"} />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent position="popper" sideOffset={5} className="z-[200]">
                   {venues.map((v) => (
                     <SelectItem key={v.id} value={v.name}>
-                      {v.name} {v.capacity && `(${v.capacity} seats)`}
+                      {v.name}{" "}
+                      {v.capacity && `(${v.capacity} seats)`}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -166,7 +287,9 @@ export default function BookingViewNew() {
             {/* Date and Duration */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</label>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Date
+                </label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -177,10 +300,15 @@ export default function BookingViewNew() {
                       )}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {date ? format(date, "dd / MM / yy") : "Pick a date"}
+                      {date
+                        ? format(date, "dd / MM / yy")
+                        : "Pick a date"}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
+                  <PopoverContent
+                    className="w-auto p-0"
+                    align="start"
+                  >
                     <Calendar
                       mode="single"
                       selected={date}
@@ -193,14 +321,21 @@ export default function BookingViewNew() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Duration</label>
-                <Select value={duration} onValueChange={setDuration}>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Duration
+                </label>
+                <Select
+                  value={duration}
+                  onValueChange={setDuration}
+                >
                   <SelectTrigger className="w-full bg-card border-border text-foreground h-12">
                     <SelectValue placeholder="Duration" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" sideOffset={5} className="z-[200]">
                     {DURATIONS.map((d) => (
-                      <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
+                      <SelectItem key={d.value} value={d.value}>
+                        {d.label}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -209,17 +344,24 @@ export default function BookingViewNew() {
 
             {/* Start Time */}
             <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Start Time</label>
-              <Select value={startTime} onValueChange={setStartTime}>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Start Time
+              </label>
+              <Select
+                value={startTime}
+                onValueChange={setStartTime}
+              >
                 <SelectTrigger className="w-full bg-card border-border text-foreground h-12">
                   <SelectValue placeholder="Select time" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent position="popper" sideOffset={5} className="z-[200]">
                   {TIME_SLOTS.map((slot) => (
-                    <SelectItem 
-                      key={slot.time} 
+                    <SelectItem
+                      key={slot.time}
                       value={slot.time}
-                      disabled={getSlotStatus(slot.time) === "booked"}
+                      disabled={
+                        getSlotStatus(slot.time) === "booked"
+                      }
                     >
                       {slot.label}
                     </SelectItem>
@@ -230,7 +372,9 @@ export default function BookingViewNew() {
 
             {/* Purpose */}
             <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Purpose / Remarks</label>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Purpose / Remarks
+              </label>
               <Textarea
                 value={purpose}
                 onChange={(e) => setPurpose(e.target.value)}
@@ -241,17 +385,25 @@ export default function BookingViewNew() {
 
             {/* Info Note */}
             <div className="flex items-start gap-2 text-xs text-muted-foreground">
-              <Info size={14} className="text-primary mt-0.5 shrink-0" />
-              <span>A confirmation request will be sent to the CSIS office for approval.</span>
+              <Info
+                size={14}
+                className="text-primary mt-0.5 shrink-0"
+              />
+              <span>
+                A confirmation email will be sent to you and the admin.
+                Once approved, you can add it to Google Calendar.
+              </span>
             </div>
 
             {/* Submit Button */}
-            <Button 
-              onClick={handleSubmit} 
+            <Button
+              onClick={handleSubmit}
               disabled={isSubmitting || !selectedVenue || !purpose}
               className="w-full h-12"
             >
-              {isSubmitting ? "Submitting..." : "Check Availability & Request Booking"}
+              {isSubmitting
+                ? "Submitting..."
+                : "Check Availability & Request Booking"}
             </Button>
           </div>
 
@@ -259,8 +411,13 @@ export default function BookingViewNew() {
           <div className="space-y-6">
             {/* Availability Preview */}
             <div>
-              <h2 className="text-xl font-bold text-foreground mb-1">Availability Preview</h2>
-              <p className="text-sm text-muted-foreground mb-4">Lab 3 • Today</p>
+              <h2 className="text-xl font-bold text-foreground mb-1">
+                Availability Preview
+              </h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                {selectedVenue || "Select a venue"} &bull;{" "}
+                {format(date, "MMM d, yyyy")}
+              </p>
 
               <div className="grid grid-cols-4 gap-2 mb-4">
                 {TIME_SLOTS.map((slot) => {
@@ -268,18 +425,30 @@ export default function BookingViewNew() {
                   return (
                     <button
                       key={slot.time}
-                      onClick={() => status === "available" && setStartTime(slot.time)}
+                      onClick={() =>
+                        status === "available" &&
+                        setStartTime(slot.time)
+                      }
                       disabled={status === "booked"}
                       className={cn(
                         "py-3 px-2 rounded-lg text-sm font-medium transition-all",
-                        status === "available" && "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30",
-                        status === "booked" && "bg-rose-500/20 text-rose-400 border border-rose-500/30 cursor-not-allowed",
-                        status === "yours" && "bg-violet-500/20 text-violet-400 border border-violet-500/30",
-                        startTime === slot.time && status === "available" && "ring-2 ring-emerald-500"
+                        status === "available" &&
+                          "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30",
+                        status === "booked" &&
+                          "bg-rose-500/20 text-rose-400 border border-rose-500/30 cursor-not-allowed",
+                        status === "yours" &&
+                          "bg-violet-500/20 text-violet-400 border border-violet-500/30",
+                        startTime === slot.time &&
+                          status === "available" &&
+                          "ring-2 ring-emerald-500"
                       )}
                     >
                       <span className="text-xs mr-1">
-                        {status === "available" ? "✓" : status === "booked" ? "×" : "★"}
+                        {status === "available"
+                          ? "✓"
+                          : status === "booked"
+                          ? "×"
+                          : "★"}
                       </span>
                       {slot.label}
                     </button>
@@ -306,15 +475,27 @@ export default function BookingViewNew() {
 
             {/* Quick Booking via Chat */}
             <div className="bg-card rounded-xl p-5 border border-border">
-              <h3 className="font-semibold text-foreground mb-2">Quick Booking via Chat</h3>
-              <p className="text-sm text-muted-foreground mb-4">Try saying:</p>
+              <div className="flex items-center gap-2 mb-2">
+                <MessageSquare size={18} className="text-primary" />
+                <h3 className="font-semibold text-foreground">
+                  Quick Booking via Chat
+                </h3>
+              </div>
+              <p className="text-sm text-muted-foreground mb-4">
+                Try saying:
+              </p>
               <div className="space-y-2">
                 {QUICK_BOOKING_PROMPTS.map((prompt, idx) => (
                   <button
                     key={idx}
+                    onClick={() =>
+                      navigate("/dashboard/chat", {
+                        state: { prefill: prompt },
+                      })
+                    }
                     className="w-full text-left px-4 py-3 rounded-lg bg-primary/10 border border-primary/20 text-primary text-sm hover:bg-primary/20 transition-colors"
                   >
-                    "{prompt}"
+                    &ldquo;{prompt}&rdquo;
                   </button>
                 ))}
               </div>

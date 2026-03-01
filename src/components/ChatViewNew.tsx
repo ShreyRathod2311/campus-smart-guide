@@ -18,6 +18,7 @@ import {
   Pencil,
   Check,
   X,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Msg, SourceDoc, ChatMetadata, streamChat } from "@/lib/chat-stream";
@@ -31,10 +32,21 @@ import {
   saveMessage,
   deriveTitle,
 } from "@/lib/chat-persistence";
+import {
+  fetchVenues,
+  createBooking,
+  checkAvailability,
+  parseBookingIntent,
+  formatTimeDisplay,
+  formatDateDisplay,
+  type Venue,
+} from "@/lib/booking-service";
+import { format, addDays } from "date-fns";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { useLocation } from "react-router-dom";
 
 /* ────────── Suggestion chips (Gemini-style) ────────── */
 const SUGGESTIONS = [
@@ -100,6 +112,188 @@ function SourcesSection({ sources }: { sources: SourceDoc[] }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════
+   INLINE BOOKING CARD  –  shown in chat when booking intent detected
+   ════════════════════════════════════════════════════════════ */
+const INLINE_TIME_SLOTS = [
+  "08:00","09:00","10:00","11:00","12:00",
+  "14:00","15:00","16:00","17:00","18:00","19:00","20:00",
+];
+const INLINE_DURATIONS = ["1","2","3","4"];
+
+function InlineBookingCard({
+  onBooked,
+  userName,
+  userEmail,
+  userId,
+}: {
+  onBooked: (summary: string, calendarUrl: string) => void;
+  userName: string;
+  userEmail: string;
+  userId?: string;
+}) {
+  const [venues, setVenues] = useState<Venue[]>([]);
+  const [venue, setVenue] = useState("");
+  const [date, setDate] = useState(format(addDays(new Date(), 1), "yyyy-MM-dd"));
+  const [startTime, setStartTime] = useState("10:00");
+  const [duration, setDuration] = useState("1");
+  const [purpose, setPurpose] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+  const [calendarUrl, setCalendarUrl] = useState("");
+
+  useEffect(() => {
+    fetchVenues().then((v) => {
+      setVenues(v);
+      if (v.length) setVenue(v[0].name);
+    });
+  }, []);
+
+  const submit = async () => {
+    if (!venue || !date || !startTime || !purpose) {
+      toast.error("Please fill all booking fields.");
+      return;
+    }
+    const endHour = parseInt(startTime.slice(0, 2)) + parseInt(duration);
+    const endTime = `${endHour.toString().padStart(2, "0")}:00`;
+
+    setSubmitting(true);
+    const result = await createBooking({
+      venue,
+      date,
+      startTime,
+      endTime,
+      purpose,
+      requestedBy: userName,
+      email: userEmail,
+      userId,
+    });
+    setSubmitting(false);
+
+    if (!result.success) {
+      toast.error(result.error || "Booking failed.");
+      return;
+    }
+
+    setDone(true);
+    setCalendarUrl(result.calendarUrl || "");
+    const summary = `Booking confirmed for **${venue}** on ${date} from ${formatTimeDisplay(startTime)} to ${formatTimeDisplay(endTime)}. Purpose: ${purpose}. Status: **Pending Approval**. Emails have been sent to you and the admin.`;
+    onBooked(summary, result.calendarUrl || "");
+  };
+
+  if (done) {
+    return (
+      <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+        <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-medium text-sm mb-2">
+          <Check size={16} /> Booking request submitted!
+        </div>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+          You and the admin have been notified via email.
+        </p>
+        {calendarUrl && (
+          <a
+            href={calendarUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 text-xs font-medium transition-colors"
+          >
+            <CalendarPlus size={14} />
+            Add to Google Calendar
+            <ExternalLink size={12} />
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 rounded-xl border border-blue-500/30 bg-blue-500/5 p-4 space-y-3">
+      <p className="text-sm font-medium text-blue-600 dark:text-blue-400 flex items-center gap-2">
+        <CalendarPlus size={16} /> Quick Booking
+      </p>
+
+      {/* Venue */}
+      <div>
+        <label className="text-[11px] text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Venue</label>
+        <select
+          value={venue}
+          onChange={(e) => setVenue(e.target.value)}
+          className="mt-1 w-full rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        >
+          {venues.map((v) => (
+            <option key={v.id} value={v.name}>
+              {v.name} {v.capacity ? `(${v.capacity} seats)` : ""}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Date + Time + Duration */}
+      <div className="grid grid-cols-3 gap-2">
+        <div>
+          <label className="text-[11px] text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Date</label>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            min={format(new Date(), "yyyy-MM-dd")}
+            className="mt-1 w-full rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-2 py-2 text-sm text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+        <div>
+          <label className="text-[11px] text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Start</label>
+          <select
+            value={startTime}
+            onChange={(e) => setStartTime(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-2 py-2 text-sm text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            {INLINE_TIME_SLOTS.map((t) => (
+              <option key={t} value={t}>{formatTimeDisplay(t)}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-[11px] text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Duration</label>
+          <select
+            value={duration}
+            onChange={(e) => setDuration(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-2 py-2 text-sm text-neutral-800 dark:text-neutral-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            {INLINE_DURATIONS.map((d) => (
+              <option key={d} value={d}>{d} hr{d !== "1" ? "s" : ""}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Purpose */}
+      <div>
+        <label className="text-[11px] text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Purpose</label>
+        <input
+          type="text"
+          value={purpose}
+          onChange={(e) => setPurpose(e.target.value)}
+          placeholder="e.g., Project demo for CS302"
+          className="mt-1 w-full rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        />
+      </div>
+
+      <button
+        onClick={submit}
+        disabled={submitting || !purpose}
+        className={cn(
+          "w-full rounded-lg py-2 text-sm font-medium transition-colors",
+          submitting || !purpose
+            ? "bg-neutral-200 dark:bg-neutral-700 text-neutral-400 cursor-not-allowed"
+            : "bg-blue-600 hover:bg-blue-700 text-white"
+        )}
+      >
+        {submitting ? "Submitting..." : "Book Now"}
+      </button>
     </div>
   );
 }
@@ -334,6 +528,7 @@ function ChatHistorySidebar({
    ════════════════════════════════════════════════════════════ */
 export default function ChatView() {
   const { user, profile } = useAuth();
+  const location = useLocation();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -348,6 +543,9 @@ export default function ChatView() {
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
+
+  /* booking card state — show inline booking form after booking-intent messages */
+  const [showBookingCard, setShowBookingCard] = useState(false);
 
   /* user display helpers */
   const userInitials = (() => {
@@ -400,10 +598,21 @@ export default function ChatView() {
     };
   }, [activeConvId]);
 
+  /* ── Handle prefill from navigation state (Quick Booking via Chat) ── */
+  useEffect(() => {
+    const state = location.state as { prefill?: string } | null;
+    if (state?.prefill) {
+      setInput(state.prefill);
+      // Clear the state so it doesn't re-fire
+      window.history.replaceState({}, document.title);
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  }, [location.state]);
+
   /* auto-scroll */
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, showBookingCard]);
 
   /* auto-resize textarea */
   useEffect(() => {
@@ -428,6 +637,7 @@ export default function ChatView() {
     setActiveConvId(null);
     setMessages([]);
     setInput("");
+    setShowBookingCard(false);
     setTimeout(() => inputRef.current?.focus(), 50);
   }, []);
 
@@ -575,7 +785,29 @@ export default function ChatView() {
     } else {
       console.warn(`[ChatView] No assistant response to save (convId=${convId}, length=${assistantSoFar.length})`);
     }
+
+    // Detect booking intent → show inline booking card
+    const intent = parseBookingIntent(text.trim());
+    if (intent.isBooking) {
+      setShowBookingCard(true);
+    }
   };
+
+  /* ── Callback when inline booking card completes ── */
+  const handleBookingComplete = useCallback(
+    async (summary: string, calendarUrl: string) => {
+      // Append a system/assistant message with the booking confirmation
+      const confirmMsg: Msg = { role: "assistant", content: summary };
+      setMessages((prev) => [...prev, confirmMsg]);
+      setShowBookingCard(false);
+
+      // Persist if we have an active conversation
+      if (activeConvId) {
+        await saveMessage(activeConvId, confirmMsg);
+      }
+    },
+    [activeConvId]
+  );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -694,6 +926,23 @@ export default function ChatView() {
                   )}
                 </div>
               ))}
+
+              {/* Inline Booking Card */}
+              {showBookingCard && !isLoading && (
+                <div className="flex gap-3 animate-slide-up">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-blue-500 flex items-center justify-center shrink-0 mt-1">
+                    <Sparkles size={14} className="text-white" />
+                  </div>
+                  <div className="max-w-[85%] flex-1 min-w-0">
+                    <InlineBookingCard
+                      userName={profile?.full_name || user?.email || "User"}
+                      userEmail={user?.email || ""}
+                      userId={user?.id}
+                      onBooked={handleBookingComplete}
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Typing indicator */}
               {isLoading && messages[messages.length - 1]?.role !== "assistant" && (
