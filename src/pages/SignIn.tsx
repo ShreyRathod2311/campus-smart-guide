@@ -45,7 +45,7 @@ export default function SignIn() {
     setIsGoogleLoading(true);
     const { error } = await signInWithGoogle();
     setIsGoogleLoading(false);
-    
+
     if (error) {
       setError(error.message);
     }

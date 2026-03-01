@@ -1,251 +1,184 @@
-import { Link } from "react-router-dom";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { 
-  GraduationCap, 
-  MessageSquare, 
-  Calendar, 
-  BookOpen, 
+import { Textarea } from "@/components/ui/textarea";
+import { CelestialSphere } from "@/components/ui/celestial-sphere";
+import { cn } from "@/lib/utils";
+import {
+  GraduationCap,
+  ArrowUpIcon,
+  Paperclip,
+  BookOpen,
+  HelpCircle,
+  CalendarPlus,
+  Sparkles,
+  MessageSquare,
   Shield,
   ChevronRight,
-  Sparkles,
-  CheckCircle,
-  ArrowRight,
-  Users,
-  Zap
 } from "lucide-react";
 
-const features = [
-  {
-    icon: MessageSquare,
-    title: "AI-Powered Assistant",
-    description: "Get instant answers to your campus queries with our intelligent RAG-based chatbot that understands CSIS-specific information.",
-  },
-  {
-    icon: Calendar,
-    title: "Lab & Room Booking",
-    description: "Book labs, seminar halls, and conference rooms with real-time availability and instant admin approval workflow.",
-  },
-  {
-    icon: BookOpen,
-    title: "Knowledge Base",
-    description: "Access comprehensive information about academic policies, administrative procedures, and campus facilities.",
-  },
-  {
-    icon: Shield,
-    title: "Secure & Private",
-    description: "Your data is protected with enterprise-grade security. All conversations and bookings are private to your account.",
-  },
-];
+/* ─── Auto-resize hook ─── */
+function useAutoResizeTextarea({ minHeight, maxHeight }: { minHeight: number; maxHeight?: number }) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const adjustHeight = useCallback(
+    (reset?: boolean) => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      if (reset) { textarea.style.height = `${minHeight}px`; return; }
+      textarea.style.height = `${minHeight}px`;
+      const newHeight = Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight ?? Infinity));
+      textarea.style.height = `${newHeight}px`;
+    },
+    [minHeight, maxHeight],
+  );
+  useEffect(() => {
+    if (textareaRef.current) textareaRef.current.style.height = `${minHeight}px`;
+  }, [minHeight]);
+  return { textareaRef, adjustHeight };
+}
 
-const benefits = [
-  "24/7 access to campus information",
-  "Personalized responses based on your profile",
-  "Track your booking requests in real-time",
-  "Access academic policies and guidelines instantly",
-  "Get help with TA applications and reimbursements",
-  "Seamless integration with BITS Pilani systems",
-];
-
-export default function Landing() {
+/* ─── Quick-action pill ─── */
+function QuickAction({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick?: () => void }) {
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
-              <GraduationCap className="w-5 h-5 text-primary" />
-            </div>
-            <span className="font-display font-bold text-xl">SmartAssist</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" asChild>
-              <Link to="/sign-in">Sign In</Link>
-            </Button>
-            <Button asChild>
-              <Link to="/sign-up">
-                Get Started
-                <ChevronRight className="ml-1 h-4 w-4" />
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </header>
+    <Button
+      variant="outline"
+      onClick={onClick}
+      className="flex items-center gap-2 rounded-full border-neutral-700 bg-black/50 text-neutral-300 hover:text-white hover:bg-neutral-700"
+    >
+      {icon}
+      <span className="text-xs">{label}</span>
+    </Button>
+  );
+}
 
-      {/* Hero Section */}
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/5" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-primary/10 via-transparent to-transparent" />
-        
-        <div className="container mx-auto px-4 py-20 md:py-32 relative">
-          <div className="max-w-3xl mx-auto text-center">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-6">
-              <Sparkles className="w-4 h-4" />
-              AI-Powered Campus Assistant
-            </div>
-            
-            <h1 className="font-display text-4xl md:text-6xl font-bold tracking-tight mb-6 bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text">
-              Your Smart Guide to{" "}
-              <span className="text-primary">CSIS Campus</span>
-            </h1>
-            
-            <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Navigate academic policies, book labs, track requests, and get instant answers 
-              about anything related to the Computer Science & Information Systems department.
-            </p>
-            
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button size="lg" asChild className="text-base">
-                <Link to="/sign-up">
-                  Start for Free
-                  <ArrowRight className="ml-2 h-5 w-5" />
-                </Link>
-              </Button>
-              <Button size="lg" variant="outline" asChild className="text-base">
-                <Link to="/sign-in">
-                  Sign In
-                </Link>
-              </Button>
-            </div>
+/* ─── Landing Page ─── */
+export default function Landing() {
+  const [message, setMessage] = useState("");
+  const navigate = useNavigate();
+  const { textareaRef, adjustHeight } = useAutoResizeTextarea({ minHeight: 48, maxHeight: 150 });
 
-            <div className="mt-12 flex items-center justify-center gap-8 text-sm text-muted-foreground">
-              <div className="flex items-center gap-2">
-                <Users className="w-5 h-5 text-primary" />
-                <span>500+ Active Users</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Zap className="w-5 h-5 text-primary" />
-                <span>Instant Responses</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Shield className="w-5 h-5 text-primary" />
-                <span>Secure & Private</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+  const handleSubmit = () => {
+    navigate("/sign-in");
+  };
 
-      {/* Features Section */}
-      <section className="py-20 bg-muted/30">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-12">
-            <h2 className="font-display text-3xl md:text-4xl font-bold mb-4">
-              Everything You Need
-            </h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              SmartAssist combines AI intelligence with campus-specific knowledge to give you 
-              the best experience.
-            </p>
-          </div>
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  };
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {features.map((feature, index) => (
-              <div
-                key={index}
-                className="group p-6 rounded-2xl bg-card border border-border hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300"
-              >
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
-                  <feature.icon className="w-6 h-6 text-primary" />
-                </div>
-                <h3 className="font-display text-lg font-semibold mb-2">{feature.title}</h3>
-                <p className="text-muted-foreground text-sm">{feature.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+  return (
+    <div className="relative w-full min-h-screen bg-black flex flex-col">
+      {/* ─── Hero with CelestialSphere ─── */}
+      <section className="relative flex h-screen w-full flex-col items-center overflow-hidden">
+        <CelestialSphere
+          hue={210.0}
+          speed={0.4}
+          zoom={1.2}
+          particleSize={4.0}
+          className="absolute top-0 left-0 w-full h-full"
+        />
 
-      {/* Benefits Section */}
-      <section className="py-20">
-        <div className="container mx-auto px-4">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div>
-              <h2 className="font-display text-3xl md:text-4xl font-bold mb-6">
-                Why Choose SmartAssist?
-              </h2>
-              <p className="text-muted-foreground text-lg mb-8">
-                Built specifically for BITS Pilani Goa Campus, SmartAssist understands your 
-                unique needs and provides accurate, context-aware assistance.
-              </p>
-              
-              <div className="grid gap-4">
-                {benefits.map((benefit, index) => (
-                  <div key={index} className="flex items-start gap-3">
-                    <div className="w-6 h-6 rounded-full bg-green-500/10 flex items-center justify-center shrink-0 mt-0.5">
-                      <CheckCircle className="w-4 h-4 text-green-500" />
-                    </div>
-                    <span className="text-foreground">{benefit}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="relative">
-              <div className="aspect-square rounded-3xl bg-gradient-to-br from-primary/20 via-primary/10 to-transparent p-8 flex items-center justify-center">
-                <div className="w-full max-w-sm bg-card rounded-2xl border border-border shadow-2xl p-6">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                      <MessageSquare className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-sm">SmartAssist</h4>
-                      <p className="text-xs text-muted-foreground">AI Campus Guide</p>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <div className="bg-muted rounded-xl rounded-bl-md p-3">
-                      <p className="text-sm">How do I apply for a TA position?</p>
-                    </div>
-                    <div className="bg-primary/10 rounded-xl rounded-br-md p-3 text-sm">
-                      <p>To apply for a TA position in CSIS:</p>
-                      <ul className="list-disc list-inside mt-2 text-muted-foreground">
-                        <li>Ensure CGPA ≥ 7.5</li>
-                        <li>Fill the form on CSIS Portal</li>
-                        <li>Submit before deadline</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="py-20 bg-primary/5">
-        <div className="container mx-auto px-4 text-center">
-          <h2 className="font-display text-3xl md:text-4xl font-bold mb-4">
-            Ready to Get Started?
-          </h2>
-          <p className="text-muted-foreground text-lg mb-8 max-w-xl mx-auto">
-            Join hundreds of students and faculty using SmartAssist to navigate campus life.
-          </p>
-          <Button size="lg" asChild className="text-base">
-            <Link to="/sign-up">
-              Create Free Account
-              <ArrowRight className="ml-2 h-5 w-5" />
-            </Link>
-          </Button>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t border-border py-8">
-        <div className="container mx-auto px-4">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+        {/* Header */}
+        <header className="relative z-20 w-full">
+          <div className="container mx-auto px-4 h-16 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                <GraduationCap className="w-4 h-4 text-primary" />
+              <div className="w-9 h-9 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center">
+                <GraduationCap className="w-5 h-5 text-white" />
               </div>
-              <span className="font-display font-semibold">CSIS SmartAssist</span>
+              <span className="font-bold text-xl text-white tracking-tight">SmartAssist</span>
             </div>
-            <p className="text-sm text-muted-foreground">
-              © 2026 BITS Pilani Goa Campus. Built for CSIS Department.
+            <div className="flex items-center gap-3">
+              <Button variant="ghost" asChild className="text-white/70 hover:text-white hover:bg-white/10">
+                <Link to="/sign-in">Sign In</Link>
+              </Button>
+              <Button asChild className="bg-white text-black hover:bg-white/90">
+                <Link to="/sign-up">
+                  Get Started
+                  <ChevronRight className="ml-1 h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </header>
+
+        {/* Centered title + chat input (RuixenMoonChat style) */}
+        <div className="relative z-10 flex-1 w-full flex flex-col items-center justify-center pointer-events-none">
+          <div className="text-center mb-8 pointer-events-auto">
+            <h1 className="text-5xl sm:text-6xl md:text-7xl font-bold text-white tracking-tighter drop-shadow-sm">
+              CSIS SmartAssist
+            </h1>
+            <p className="mt-3 text-lg text-neutral-300">
+              Navigate academic policies, book labs, track requests — just start typing below.
             </p>
           </div>
+
+          {/* Chat Input */}
+          <div className="w-full max-w-3xl px-4 pointer-events-auto">
+            <div className="relative bg-black/60 backdrop-blur-md rounded-xl border border-neutral-700">
+              <Textarea
+                ref={textareaRef}
+                value={message}
+                onChange={(e) => {
+                  setMessage(e.target.value);
+                  adjustHeight();
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask anything about CSIS campus..."
+                className={cn(
+                  "w-full px-4 py-3 resize-none border-none",
+                  "bg-transparent text-white text-sm",
+                  "focus-visible:ring-0 focus-visible:ring-offset-0",
+                  "placeholder:text-neutral-400 min-h-[48px]"
+                )}
+                style={{ overflow: "hidden" }}
+              />
+
+              <div className="flex items-center justify-between p-3">
+                <Button variant="ghost" size="icon" className="text-white hover:bg-neutral-700">
+                  <Paperclip className="w-4 h-4" />
+                </Button>
+                <Button
+                  onClick={handleSubmit}
+                  className={cn(
+                    "flex items-center gap-1 px-3 py-2 rounded-lg transition-colors",
+                    message.trim()
+                      ? "bg-white text-black hover:bg-white/90"
+                      : "bg-neutral-700 text-neutral-400 cursor-not-allowed"
+                  )}
+                >
+                  <ArrowUpIcon className="w-4 h-4" />
+                  <span className="sr-only">Send</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="flex items-center justify-center flex-wrap gap-3 mt-6 mb-8">
+              <QuickAction icon={<MessageSquare className="w-4 h-4" />} label="Ask a Question" onClick={handleSubmit} />
+              <QuickAction icon={<CalendarPlus className="w-4 h-4" />} label="Book a Lab" onClick={handleSubmit} />
+              <QuickAction icon={<BookOpen className="w-4 h-4" />} label="TA Application" onClick={handleSubmit} />
+              <QuickAction icon={<HelpCircle className="w-4 h-4" />} label="Reimbursement" onClick={handleSubmit} />
+              <QuickAction icon={<Sparkles className="w-4 h-4" />} label="Academic Policies" onClick={handleSubmit} />
+              <QuickAction icon={<Shield className="w-4 h-4" />} label="Campus Info" onClick={handleSubmit} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Footer ─── */}
+      <footer className="relative z-20 border-t border-white/10 py-6 bg-black">
+        <div className="container mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
+              <GraduationCap className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-semibold text-white">CSIS SmartAssist</span>
+          </div>
+          <p className="text-sm text-gray-600">
+            © 2026 BITS Pilani Goa Campus. Built for CSIS Department.
+          </p>
         </div>
       </footer>
     </div>

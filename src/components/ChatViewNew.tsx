@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Msg, SourceDoc, ChatMetadata, streamChat } from "@/lib/chat-stream";
 import {
   Conversation,
@@ -35,6 +36,7 @@ import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+
 
 /* ────────── Suggestion chips (Gemini-style) ────────── */
 const SUGGESTIONS = [
@@ -129,8 +131,8 @@ function ChatHistorySidebar({
 
   const filtered = search
     ? conversations.filter((c) =>
-        (c.title || "").toLowerCase().includes(search.toLowerCase())
-      )
+      (c.title || "").toLowerCase().includes(search.toLowerCase())
+    )
     : conversations;
 
   /* group by date */
@@ -175,12 +177,12 @@ function ChatHistorySidebar({
   };
 
   return (
-    <div className="w-[260px] shrink-0 h-full flex flex-col bg-neutral-50 dark:bg-neutral-950 border-r border-neutral-200 dark:border-neutral-800">
+    <div className="w-[260px] shrink-0 h-full flex flex-col bg-neutral-950 border-r border-neutral-800/60">
       {/* New chat button */}
       <div className="p-3">
         <button
           onClick={onNew}
-          className="w-full flex items-center gap-2.5 rounded-full border border-neutral-300 dark:border-neutral-700 px-4 py-2.5 text-sm font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/70 transition-colors"
+          className="w-full flex items-center gap-2.5 rounded-xl border border-neutral-700/60 px-4 py-2.5 text-sm font-medium text-neutral-200 hover:bg-neutral-800/70 hover:border-neutral-600 transition-all"
         >
           <Plus size={18} />
           New chat
@@ -192,13 +194,13 @@ function ChatHistorySidebar({
         <div className="relative">
           <Search
             size={14}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400"
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"
           />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search chats..."
-            className="w-full rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 pl-8 pr-3 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 placeholder:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-lg border border-neutral-800 bg-neutral-900/80 pl-8 pr-3 py-1.5 text-xs text-neutral-300 placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
           />
         </div>
       </div>
@@ -206,13 +208,13 @@ function ChatHistorySidebar({
       {/* Conversation list */}
       <div className="flex-1 overflow-y-auto px-2 pb-4 scrollbar-thin">
         {filtered.length === 0 && (
-          <p className="text-xs text-neutral-400 text-center mt-8">
+          <p className="text-xs text-neutral-500 text-center mt-8">
             {search ? "No matching chats" : "No conversations yet"}
           </p>
         )}
         {groups.map((g) => (
           <div key={g.label} className="mt-4 first:mt-1">
-            <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+            <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-600">
               {g.label}
             </p>
             {g.items.map((c) => (
@@ -222,10 +224,10 @@ function ChatHistorySidebar({
                   if (editingId !== c.id) onSelect(c.id);
                 }}
                 className={cn(
-                  "group relative flex items-center gap-2 rounded-lg px-3 py-2 cursor-pointer text-[13px] transition-colors",
+                  "group relative flex items-center gap-2 rounded-lg px-3 py-2 cursor-pointer text-[13px] transition-all",
                   c.id === activeId
-                    ? "bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 font-medium"
-                    : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/60"
+                    ? "bg-blue-500/10 text-blue-400 font-medium border border-blue-500/20"
+                    : "text-neutral-400 hover:bg-neutral-800/60 hover:text-neutral-200 border border-transparent"
                 )}
               >
                 <MessageSquare size={14} className="shrink-0 opacity-60" />
@@ -240,7 +242,7 @@ function ChatHistorySidebar({
                         if (e.key === "Enter") confirmRename(c.id);
                         if (e.key === "Escape") setEditingId(null);
                       }}
-                      className="flex-1 min-w-0 bg-white dark:bg-neutral-800 border border-blue-400 rounded px-1.5 py-0.5 text-xs focus:outline-none"
+                      className="flex-1 min-w-0 bg-neutral-800 border border-blue-500/40 rounded px-1.5 py-0.5 text-xs text-neutral-200 focus:outline-none"
                       onClick={(e) => e.stopPropagation()}
                     />
                     <button
@@ -248,7 +250,7 @@ function ChatHistorySidebar({
                         e.stopPropagation();
                         confirmRename(c.id);
                       }}
-                      className="p-0.5 hover:text-green-600"
+                      className="p-0.5 hover:text-green-400"
                     >
                       <Check size={13} />
                     </button>
@@ -257,7 +259,7 @@ function ChatHistorySidebar({
                         e.stopPropagation();
                         setEditingId(null);
                       }}
-                      className="p-0.5 hover:text-red-500"
+                      className="p-0.5 hover:text-red-400"
                     >
                       <X size={13} />
                     </button>
@@ -294,13 +296,13 @@ function ChatHistorySidebar({
                               setMenuOpenId(null);
                             }}
                           />
-                          <div className="absolute right-0 top-6 z-50 w-36 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg py-1 text-xs">
+                          <div className="absolute right-0 top-6 z-50 w-36 rounded-xl border border-neutral-700 bg-neutral-900 shadow-2xl py-1 text-xs">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 startEditing(c);
                               }}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300"
+                              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-neutral-800 text-neutral-300"
                             >
                               <Pencil size={12} /> Rename
                             </button>
@@ -310,7 +312,7 @@ function ChatHistorySidebar({
                                 setMenuOpenId(null);
                                 onDelete(c.id);
                               }}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600"
+                              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-red-900/30 text-red-400"
                             >
                               <Trash2 size={12} /> Delete
                             </button>
@@ -588,7 +590,7 @@ export default function ChatView() {
 
   /* ════════════ RENDER ════════════ */
   return (
-    <div className="flex h-full w-full bg-white dark:bg-neutral-900">
+    <div className="flex h-full w-full bg-neutral-950">
       {/* ───── Sidebar ───── */}
       <ChatHistorySidebar
         conversations={conversations}
@@ -602,61 +604,91 @@ export default function ChatView() {
       {/* ───── Main area ───── */}
       <div className="flex-1 flex flex-col min-w-0 relative">
         {/* Top bar */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-neutral-100 dark:border-neutral-800/60">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-neutral-800 bg-neutral-950 z-10">
           <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-violet-600">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600">
               <GraduationCap size={15} className="text-white" />
             </div>
-            <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">
+            <span className="text-sm font-semibold text-neutral-200">
               CSIS SmartAssist
             </span>
           </div>
         </div>
 
         {/* Messages area */}
-        <div className="flex-1 overflow-y-auto scrollbar-thin">
+        <div className="flex-1 overflow-y-auto scrollbar-thin relative">
           {loadingMessages ? (
             <div className="flex items-center justify-center h-full">
               <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-500 border-t-transparent" />
             </div>
           ) : isEmpty ? (
-            /* ════ Empty state (Gemini style) ════ */
-            <div className="flex flex-col items-center justify-center h-full px-6 animate-fade-in">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center">
-                  <Sparkles size={20} className="text-white" />
+            /* ════ Clean empty state ════ */
+            <div className="flex flex-col items-center justify-between h-full bg-neutral-950">
+              {/* Centered greeting */}
+              <div className="flex-1 flex flex-col items-center justify-center">
+                <div className="text-center mb-8">
+                  <h1 className="text-3xl md:text-4xl font-bold text-white">
+                    Hello, {firstName}
+                  </h1>
+                  <p className="mt-2 text-neutral-400 text-sm">
+                    How can I help you today?
+                  </p>
+                </div>
+
+                {/* Suggestion cards — 2x2 grid */}
+                <div className="grid grid-cols-2 gap-3 max-w-lg w-full px-4">
+                  {SUGGESTIONS.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => send(s.prompt)}
+                      className="flex items-start gap-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4 text-left hover:bg-neutral-800 hover:border-neutral-700 transition-all group"
+                    >
+                      <s.icon size={18} className="text-blue-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-neutral-200 group-hover:text-white">{s.label}</p>
+                        <p className="text-xs text-neutral-500 mt-0.5">{s.desc}</p>
+                      </div>
+                    </button>
+                  ))}
                 </div>
               </div>
-              <h1 className="text-2xl md:text-3xl font-semibold bg-gradient-to-r from-blue-600 via-violet-500 to-fuchsia-500 bg-clip-text text-transparent mb-1">
-                Hello, {firstName}
-              </h1>
-              <p className="text-neutral-500 dark:text-neutral-400 text-base mb-10">
-                How can I help you today?
-              </p>
 
-              {/* Suggestion cards (2×2 grid) */}
-              <div className="grid grid-cols-2 gap-3 max-w-lg w-full">
-                {SUGGESTIONS.map((s) => {
-                  const Icon = s.icon;
-                  return (
-                    <button
-                      key={s.label}
-                      onClick={() => send(s.prompt)}
-                      className="group flex flex-col items-start gap-2 rounded-2xl border border-neutral-200 dark:border-neutral-700/60 bg-neutral-50/60 dark:bg-neutral-800/40 p-4 text-left transition-all hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-sm"
+              {/* Bottom input */}
+              <div className="w-full max-w-3xl px-4 pb-6">
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900 focus-within:border-neutral-700 transition-all">
+                  <Textarea
+                    ref={inputRef as any}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Ask anything..."
+                    className={cn(
+                      "w-full px-4 py-3 resize-none border-none",
+                      "bg-transparent text-neutral-200 text-sm",
+                      "focus-visible:ring-0 focus-visible:ring-offset-0",
+                      "placeholder:text-neutral-500 min-h-[48px]"
+                    )}
+                    style={{ overflow: "hidden" }}
+                  />
+                  <div className="flex items-center justify-end px-3 pb-3">
+                    <Button
+                      onClick={() => send(input)}
+                      disabled={!input.trim()}
+                      size="icon"
+                      className={cn(
+                        "rounded-lg h-8 w-8 transition-all",
+                        input.trim()
+                          ? "bg-blue-600 hover:bg-blue-700 text-white"
+                          : "bg-neutral-800 text-neutral-500 cursor-not-allowed"
+                      )}
                     >
-                      <Icon
-                        size={18}
-                        className="text-blue-500 group-hover:text-blue-600 transition-colors"
-                      />
-                      <span className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                        {s.label}
-                      </span>
-                      <span className="text-xs text-neutral-500 dark:text-neutral-400 leading-snug">
-                        {s.desc}
-                      </span>
-                    </button>
-                  );
-                })}
+                      <Send size={14} />
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-center text-[11px] text-neutral-600 mt-2">
+                  SmartAssist may display inaccurate info. Verify important information.
+                </p>
               </div>
             </div>
           ) : (
@@ -683,7 +715,7 @@ export default function ChatView() {
                         <Sparkles size={14} className="text-white" />
                       </div>
                       <div className="max-w-[85%] flex-1 min-w-0">
-                        <div className="prose prose-sm dark:prose-invert max-w-none text-neutral-800 dark:text-neutral-200 [&_p]:leading-relaxed [&_p]:my-1 [&_li]:my-0.5 [&_pre]:bg-neutral-100 [&_pre]:dark:bg-neutral-800 [&_pre]:rounded-xl [&_code]:text-[13px] [&_pre]:p-4">
+                        <div className="prose prose-sm prose-invert max-w-none text-neutral-200 [&_p]:leading-relaxed [&_p]:my-1 [&_li]:my-0.5 [&_pre]:bg-neutral-800 [&_pre]:rounded-xl [&_code]:text-[13px] [&_pre]:p-4">
                           <ReactMarkdown>{msg.content}</ReactMarkdown>
                         </div>
                         {msg.sources && msg.sources.length > 0 && (
@@ -701,10 +733,10 @@ export default function ChatView() {
                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-blue-500 flex items-center justify-center shrink-0">
                     <Sparkles size={14} className="text-white animate-pulse" />
                   </div>
-                  <div className="flex items-center gap-1.5 px-4 py-3 rounded-2xl bg-neutral-100 dark:bg-neutral-800">
-                    <span className="w-2 h-2 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: "0ms" }} />
-                    <span className="w-2 h-2 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: "150ms" }} />
-                    <span className="w-2 h-2 rounded-full bg-neutral-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+                  <div className="flex items-center gap-1.5 px-4 py-3 rounded-2xl bg-neutral-800">
+                    <span className="w-2 h-2 rounded-full bg-neutral-500 animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <span className="w-2 h-2 rounded-full bg-neutral-500 animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <span className="w-2 h-2 rounded-full bg-neutral-500 animate-bounce" style={{ animationDelay: "300ms" }} />
                   </div>
                 </div>
               )}
@@ -713,57 +745,61 @@ export default function ChatView() {
           )}
         </div>
 
-        {/* ───── Input area ───── */}
-        <div className="px-4 md:px-6 pb-5 pt-2">
-          <div className="max-w-3xl mx-auto">
-            {/* Stop button */}
-            {isLoading && (
-              <div className="flex justify-center mb-3">
-                <button
-                  onClick={stopGeneration}
-                  className="inline-flex items-center gap-2 rounded-full border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-4 py-2 text-sm font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition-colors shadow-sm"
-                >
-                  <Square size={14} className="fill-current" />
-                  Stop generating
-                </button>
-              </div>
-            )}
+        {/* ───── Input area (conversation mode) ───── */}
+        {!isEmpty && (
+          <div className="px-4 md:px-6 pb-5 pt-2 bg-neutral-950">
+            <div className="max-w-3xl mx-auto">
+              {isLoading && (
+                <div className="flex justify-center mb-3">
+                  <button
+                    onClick={stopGeneration}
+                    className="inline-flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-900 px-4 py-2 text-sm font-medium text-neutral-400 hover:bg-neutral-800 hover:text-white transition-all"
+                  >
+                    <Square size={14} className="fill-current" />
+                    Stop generating
+                  </button>
+                </div>
+              )}
 
-            {/* Input box */}
-            <div className="relative flex items-end rounded-3xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/60 shadow-sm focus-within:border-blue-400 dark:focus-within:border-blue-500 focus-within:shadow-md transition-all">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask CSIS SmartAssist anything..."
-                rows={1}
-                className="flex-1 bg-transparent resize-none px-5 py-3.5 text-sm text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 focus:outline-none max-h-[200px] leading-relaxed"
-              />
-              <div className="pr-3 pb-2.5 flex items-end">
-                <Button
-                  onClick={() => send(input)}
-                  disabled={!input.trim() || isLoading}
-                  size="icon"
+              <div className="rounded-xl border border-neutral-800 bg-neutral-900 focus-within:border-neutral-700 transition-all">
+                <Textarea
+                  ref={inputRef as any}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Ask anything..."
                   className={cn(
-                    "h-9 w-9 rounded-full transition-all",
-                    input.trim() && !isLoading
-                      ? "bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-                      : "bg-neutral-200 dark:bg-neutral-700 text-neutral-400 cursor-not-allowed"
+                    "w-full px-4 py-3 resize-none border-none",
+                    "bg-transparent text-neutral-200 text-sm",
+                    "focus-visible:ring-0 focus-visible:ring-offset-0",
+                    "placeholder:text-neutral-500 min-h-[48px]"
                   )}
-                >
-                  <Send size={16} />
-                </Button>
+                  style={{ overflow: "hidden" }}
+                />
+                <div className="flex items-center justify-end px-3 pb-3">
+                  <Button
+                    onClick={() => send(input)}
+                    disabled={!input.trim() || isLoading}
+                    size="icon"
+                    className={cn(
+                      "rounded-lg h-8 w-8 transition-all",
+                      input.trim() && !isLoading
+                        ? "bg-blue-600 hover:bg-blue-700 text-white"
+                        : "bg-neutral-800 text-neutral-500 cursor-not-allowed"
+                    )}
+                  >
+                    <Send size={14} />
+                  </Button>
+                </div>
               </div>
-            </div>
 
-            <p className="text-center text-[11px] text-neutral-400 mt-2">
-              SmartAssist may display inaccurate info. Verify important information.
-            </p>
+              <p className="text-center text-[11px] text-neutral-600 mt-2">
+                SmartAssist may display inaccurate info. Verify important information.
+              </p>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
 }
-
