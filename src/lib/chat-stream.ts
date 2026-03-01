@@ -29,12 +29,14 @@ export async function streamChat({
   onDone,
   onError,
   onMetadata,
+  signal,
 }: {
   messages: Msg[];
   onDelta: (deltaText: string) => void;
   onDone: () => void;
   onError: (error: string) => void;
   onMetadata?: (metadata: ChatMetadata) => void;
+  signal?: AbortSignal;
 }) {
   // Try local AI first if enabled
   if (USE_LOCAL_AI) {
@@ -48,6 +50,7 @@ export async function streamChat({
           onDone,
           onError,
           onMetadata,
+          signal,
         });
         return;
       } else {
@@ -59,7 +62,8 @@ export async function streamChat({
   }
 
   // Fallback to remote API
-  await streamChatRemote({ messages, onDelta, onDone, onError, onMetadata });
+  console.log('[streamChat] Using remote API:', CHAT_URL);
+  await streamChatRemote({ messages, onDelta, onDone, onError, onMetadata, signal });
 }
 
 async function streamChatRemote({
@@ -68,12 +72,14 @@ async function streamChatRemote({
   onDone,
   onError,
   onMetadata,
+  signal,
 }: {
   messages: Msg[];
   onDelta: (deltaText: string) => void;
   onDone: () => void;
   onError: (error: string) => void;
   onMetadata?: (metadata: ChatMetadata) => void;
+  signal?: AbortSignal;
 }) {
   const resp = await fetch(CHAT_URL, {
     method: "POST",
@@ -82,6 +88,7 @@ async function streamChatRemote({
       Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
     },
     body: JSON.stringify({ messages: messages.map(m => ({ role: m.role, content: m.content })) }),
+    signal,
   });
 
   if (resp.status === 429) {
@@ -93,9 +100,11 @@ async function streamChatRemote({
     return;
   }
   if (!resp.ok || !resp.body) {
+    console.error('[streamChatRemote] Bad response:', resp.status, resp.statusText);
     onError("Failed to connect to SmartAssist. Please try again.");
     return;
   }
+  console.log('[streamChatRemote] Connected, starting stream...');
 
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
@@ -103,6 +112,7 @@ async function streamChatRemote({
   let streamDone = false;
 
   while (!streamDone) {
+    if (signal?.aborted) break;
     const { done, value } = await reader.read();
     if (done) break;
     textBuffer += decoder.decode(value, { stream: true });
@@ -174,5 +184,6 @@ async function streamChatRemote({
     }
   }
 
+  console.log('[streamChatRemote] Stream complete, calling onDone');
   onDone();
 }

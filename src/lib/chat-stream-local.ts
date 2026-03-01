@@ -29,6 +29,7 @@ export interface StreamChatOptions {
   onDone: () => void;
   onError: (error: string) => void;
   onMetadata?: (metadata: ChatMetadata) => void;
+  signal?: AbortSignal;
 }
 
 // Backend base URL – in Docker nginx proxies /api → backend:8000
@@ -40,7 +41,7 @@ const API_BASE =
  * Stream chat via the Python backend SSE endpoint.
  */
 export async function streamChatLocal(options: StreamChatOptions): Promise<void> {
-  const { messages, onDelta, onDone, onError, onMetadata } = options;
+  const { messages, onDelta, onDone, onError, onMetadata, signal } = options;
 
   try {
     const resp = await fetch(`${API_BASE}/chat`, {
@@ -50,6 +51,7 @@ export async function streamChatLocal(options: StreamChatOptions): Promise<void>
         messages: messages.map((m) => ({ role: m.role, content: m.content })),
         use_rag: true,
       }),
+      signal,
     });
 
     if (!resp.ok || !resp.body) {
@@ -63,6 +65,7 @@ export async function streamChatLocal(options: StreamChatOptions): Promise<void>
     let streamDone = false;
 
     while (!streamDone) {
+      if (signal?.aborted) break;
       const { done, value } = await reader.read();
       if (done) break;
       buf += decoder.decode(value, { stream: true });

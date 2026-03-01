@@ -145,7 +145,7 @@ async def chat_stream(req: ChatRequest):
             "generatedImage": None,
             "retrieval_ms": retrieval_ms,
         }
-        yield {"data": json.dumps(metadata)}
+        yield {"data": json.dumps(metadata, ensure_ascii=False)}
 
         # 2) stream tokens
         try:
@@ -153,7 +153,7 @@ async def chat_stream(req: ChatRequest):
                 payload = {
                     "choices": [{"delta": {"content": token}}]
                 }
-                yield {"data": json.dumps(payload)}
+                yield {"data": json.dumps(payload, ensure_ascii=False)}
         except Exception as exc:
             logger.error("Stream error: %s", exc)
             yield {"data": json.dumps({"error": str(exc)})}

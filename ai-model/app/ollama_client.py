@@ -91,6 +91,8 @@ class OllamaClient:
                 "POST", f"{self.base_url}/api/chat", json=payload
             ) as resp:
                 resp.raise_for_status()
+                # Force UTF-8 so emojis are decoded correctly
+                resp.encoding = "utf-8"
                 async for line in resp.aiter_lines():
                     if not line:
                         continue

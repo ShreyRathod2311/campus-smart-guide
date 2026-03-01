@@ -36,8 +36,9 @@ export default function SignIn() {
       } else {
         setError(error.message);
       }
+    } else {
+      navigate("/dashboard/chat");
     }
-    // Don't manually navigate - let the AuthRoute in App.tsx handle the redirect
   };
 
   const handleGoogleSignIn = async () => {
