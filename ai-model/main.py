@@ -7,10 +7,14 @@ from __future__ import annotations
 import json
 import logging
 import time
+import urllib.parse
 from contextlib import asynccontextmanager
+from typing import Optional
 
+import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings as ollama_settings, SYSTEM_PROMPT
@@ -31,7 +35,7 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting up – loading knowledge base …")
+    logger.info("Starting up – scraping BITS Pilani web pages for knowledge base …")
     try:
         healthy = await ollama_client.health_check()
         if healthy:
@@ -50,7 +54,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Campus Smart Guide AI",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -62,6 +66,7 @@ app.add_middleware(
         "http://localhost:5173",
         "http://localhost:8080",
         "http://frontend:3000",
+        "http://frontend",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -79,7 +84,7 @@ async def root():
     """Root route – confirms the server is running."""
     return {
         "message": "Campus Smart Guide AI backend is running",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "docs": "/docs",
     }
 
@@ -199,9 +204,86 @@ async def chat_sync(req: ChatRequest):
     }
 
 
+# ------------------------------------------------------------------
+# Image Generation — Pollinations.ai (free, no API key needed)
+# ------------------------------------------------------------------
+
+class ImageRequest(BaseModel):
+    prompt: str
+    width: int = 1024
+    height: int = 768
+    seed: Optional[int] = None
+    model: str = "flux"          # Options: flux, turbo, ghibli, etc.
+    nologo: bool = True
+
+
+class ImageResponse(BaseModel):
+    url: str
+    prompt: str
+    model: str
+
+
+@app.post("/api/image", response_model=ImageResponse)
+async def generate_image(req: ImageRequest):
+    """
+    Generate an image using Pollinations.ai (completely free, no API key).
+    The image URL is returned directly — the browser fetches it from Pollinations.
+    """
+    # Sanitise and encode the prompt
+    clean_prompt = req.prompt.strip()
+    if not clean_prompt:
+        raise HTTPException(status_code=400, detail="prompt is required")
+
+    # Enforce BITS Pilani / educational context relevance (optional guard)
+    # You can remove this if you want unrestricted image generation.
+    bits_related = any(
+        kw in clean_prompt.lower()
+        for kw in ["bits", "pilani", "campus", "college", "university",
+                   "student", "lab", "research", "goa", "department",
+                   "engineering", "computer", "science", "academic", "diagram",
+                   "chart", "flowchart", "architecture"]
+    )
+    if not bits_related:
+        raise HTTPException(
+            status_code=400,
+            detail="Image generation is limited to BITS Pilani / academic topics."
+        )
+
+    encoded_prompt = urllib.parse.quote(clean_prompt)
+    params = f"width={req.width}&height={req.height}&model={req.model}&nologo={str(req.nologo).lower()}"
+    if req.seed is not None:
+        params += f"&seed={req.seed}"
+
+    image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?{params}"
+
+    # Verify the URL is reachable (Pollinations generates on first GET)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.head(image_url, follow_redirects=True)
+            if resp.status_code not in (200, 302):
+                raise HTTPException(status_code=502, detail="Image generation service unavailable")
+    except (httpx.TimeoutException, httpx.ConnectError) as e:
+        raise HTTPException(status_code=502, detail=f"Could not reach image service: {e}")
+
+    logger.info("[image] Generated: %s", image_url)
+    return ImageResponse(url=image_url, prompt=clean_prompt, model=req.model)
+
+
+@app.get("/api/image")
+async def generate_image_get(
+    prompt: str,
+    width: int = 1024,
+    height: int = 768,
+    model: str = "flux",
+):
+    """GET shortcut for image generation (easier to test in browser)."""
+    req = ImageRequest(prompt=prompt, width=width, height=height, model=model)
+    return await generate_image(req)
+
+
 @app.post("/api/knowledge/reload")
 async def reload_knowledge():
-    """Reload the knowledge base."""
+    """Re-scrape BITS Pilani web pages and reload the knowledge base."""
     await load_knowledge_base()
     return {"status": "ok", **rag_service.stats()}
 

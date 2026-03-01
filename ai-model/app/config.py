@@ -10,7 +10,7 @@ class OllamaConfig(BaseModel):
     base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     model: str = os.getenv("OLLAMA_MODEL", "llama3.2")
     embedding_model: str = os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
-    temperature: float = 0.7
+    temperature: float = 0.1      # Low temperature for factual accuracy
     max_tokens: int = 2048
     top_p: float = 0.9
     top_k: int = 40
@@ -18,46 +18,44 @@ class OllamaConfig(BaseModel):
 
 class RAGConfig(BaseModel):
     enabled: bool = True
-    chunk_size: int = 500
-    chunk_overlap: int = 50
+    chunk_size: int = 600
+    chunk_overlap: int = 75
     max_retrieval_docs: int = 5
-    similarity_threshold: float = 0.3
+    similarity_threshold: float = 0.25   # Slightly lower for web-scraped content
 
 
-SYSTEM_PROMPT = """You are CSIS SmartAssist, an AI-powered campus assistant for the CSIS \
-(Computer Science & Information Systems) department at BITS Pilani Goa Campus.
+# ─────────────────────────────────────────────────────────────────────────────
+# System prompts — strict web-grounded mode
+# ─────────────────────────────────────────────────────────────────────────────
 
-Your role is to help students, faculty, and administrative staff with:
-1. Academic queries (TA applications, course information, exam schedules, academic policies)
-2. Administrative procedures (bill forwarding, reimbursement workflows, form submissions)
-3. Lab and room booking assistance (checking availability, suggesting slots)
-4. Department policies and guidelines
-5. General campus information
+SYSTEM_PROMPT = """\
+You are CSIS SmartAssist, the official AI assistant for the Computer Science \
+and Information Systems (CSIS) department at BITS Pilani, Goa Campus.
 
-Guidelines:
-- Always cite your source when providing policy information
-- Be concise but thorough
-- If you don't know something, say so and suggest who to contact
-- For booking requests, guide users to use the booking interface
-- Use markdown formatting for better readability
-- Be friendly and professional
-- Prioritize information from the knowledge base context when available"""
+STRICT RULES — you MUST follow all of these without exception:
+1. You may ONLY answer using information from the CONTEXT provided below.
+2. If the context does not contain sufficient information to answer the question, \
+respond ONLY with:
+   "I don't have official information about that in my knowledge base. \
+Please contact the CSIS office directly at csis.office@goa.bits-pilani.ac.in \
+or visit https://www.bits-pilani.ac.in/goa/"
+3. NEVER use general world knowledge, make assumptions, or invent facts.
+4. Always cite the source URL at the end of every answer.
+5. Use markdown formatting (headings, bullet points) for clarity.
+6. Be concise and accurate — do not pad your response.\
+"""
 
 
 def rag_system_prompt(context: str) -> str:
     return f"""{SYSTEM_PROMPT}
 
 ---
-RELEVANT KNOWLEDGE BASE CONTEXT:
-The following information is from our campus knowledge base and is highly relevant to the \
-user's query. Use this as your primary source of information:
+CONTEXT (from official BITS Pilani Goa web pages):
 
 {context}
 
 ---
-Use the above context to provide accurate, campus-specific answers. If the context doesn't \
-fully answer the question, supplement with your general knowledge but indicate when you're \
-doing so. Always cite sources when using the knowledge base."""
+Use ONLY the above context to answer. Cite the source URL for every fact you state."""
 
 
 settings = OllamaConfig()
